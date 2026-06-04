@@ -1,0 +1,64 @@
+{
+  "name": "foundry-copilot",
+  "displayName": "Foundry Copilot",
+  "description": "GitHub Copilot–style coding assistant locked to Microsoft Foundry models.",
+  "version": "0.1.0",
+  "publisher": "patmeh1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/patmeh1/foundry-copilot.git"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": ["AI", "Chat", "Programming Languages"],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "Foundry Copilot",
+      "properties": {
+        "foundryCopilot.endpoint": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Your Microsoft Foundry endpoint URL. Must end in one of: `.services.ai.azure.com`, `.cognitiveservices.azure.com`, `.openai.azure.com`, or `.inference.ml.azure.com`. The sidecar **rejects everything else** (hard lock).",
+          "pattern": "^$|^https://[A-Za-z0-9._-]+\\.(services\\.ai\\.azure\\.com|cognitiveservices\\.azure\\.com|openai\\.azure\\.com|inference\\.ml\\.azure\\.com)(/.*)?$",
+          "patternErrorMessage": "Endpoint must be HTTPS and end in a Microsoft Foundry domain (.services.ai.azure.com, .cognitiveservices.azure.com, .openai.azure.com, or .inference.ml.azure.com)."
+        },
+        "foundryCopilot.chatDeployment": {
+          "type": "string",
+          "default": "",
+          "description": "Deployment name for chat (e.g. gpt-4o)."
+        },
+        "foundryCopilot.completionDeployment": {
+          "type": "string",
+          "default": "",
+          "description": "Deployment name for inline completions."
+        },
+        "foundryCopilot.embeddingDeployment": {
+          "type": "string",
+          "default": "",
+          "description": "Deployment name for embeddings (used by RAG)."
+        },
+        "foundryCopilot.logLevel": {
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error"],
+          "default": "info",
+          "description": "Sidecar log level."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.95.0",
+    "typescript": "^5.5.4"
+  }
+}
