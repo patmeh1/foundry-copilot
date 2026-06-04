@@ -69,10 +69,20 @@ type ChatRequest struct {
 
 // ChatMessage is a single turn in a conversation.
 type ChatMessage struct {
-	Role    string `json:"role"` // "system" | "user" | "assistant" | "tool"
-	Content string `json:"content"`
-	Name    string `json:"name,omitempty"`    // for tool messages
-	ToolID  string `json:"tool_id,omitempty"` // for tool messages
+	Role       string         `json:"role"` // "system" | "user" | "assistant" | "tool"
+	Content    string         `json:"content"`
+	Name       string         `json:"name,omitempty"`         // for tool messages
+	ToolID     string         `json:"tool_id,omitempty"`      // deprecated alias for ToolCallID
+	ToolCallID string         `json:"tool_call_id,omitempty"` // for role=="tool"
+	ToolCalls  []ToolCallSpec `json:"tool_calls,omitempty"`   // for role=="assistant"
+}
+
+// ToolCallSpec is the assistant's request to invoke a tool. Mirrors the
+// openai-go function tool-call shape.
+type ToolCallSpec struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"` // raw JSON string from the model
 }
 
 // ChatChunk is one streamed delta sent to the extension.
@@ -127,15 +137,46 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onChunk func(ChatChu
 }
 
 // toOpenAIMessages converts our normalised ChatMessage slice into the
-// param-union slice openai-go expects.
+// param-union slice openai-go expects. Handles tool messages and
+// assistant turns that carry tool_calls.
 func toOpenAIMessages(msgs []ChatMessage) []openai.ChatCompletionMessageParamUnion {
 	out := make([]openai.ChatCompletionMessageParamUnion, 0, len(msgs))
 	for _, m := range msgs {
 		switch m.Role {
 		case "system":
 			out = append(out, openai.SystemMessage(m.Content))
+		case "tool":
+			id := m.ToolCallID
+			if id == "" {
+				id = m.ToolID
+			}
+			out = append(out, openai.ToolMessage(m.Content, id))
 		case "assistant":
-			out = append(out, openai.AssistantMessage(m.Content))
+			if len(m.ToolCalls) == 0 {
+				out = append(out, openai.AssistantMessage(m.Content))
+				continue
+			}
+			calls := make([]openai.ChatCompletionMessageToolCallUnionParam, 0, len(m.ToolCalls))
+			for _, tc := range m.ToolCalls {
+				calls = append(calls, openai.ChatCompletionMessageToolCallUnionParam{
+					OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+						ID: tc.ID,
+						Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+							Name:      tc.Name,
+							Arguments: tc.Arguments,
+						},
+					},
+				})
+			}
+			ap := openai.ChatCompletionAssistantMessageParam{
+				ToolCalls: calls,
+			}
+			if m.Content != "" {
+				ap.Content = openai.ChatCompletionAssistantMessageParamContentUnion{
+					OfString: param.NewOpt(m.Content),
+				}
+			}
+			out = append(out, openai.ChatCompletionMessageParamUnion{OfAssistant: &ap})
 		case "user":
 			fallthrough
 		default:

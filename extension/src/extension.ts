@@ -120,16 +120,21 @@ function readLogLevel(): 'debug' | 'info' | 'warn' | 'error' {
 async function pushSettings(): Promise<void> {
     if (!rpc) return;
     const cfg = vscode.workspace.getConfiguration(CFG_NS);
+    const folder = vscode.workspace.workspaceFolders?.[0];
     const payload: SidecarConfig = {
         endpoint: cfg.get<string>('endpoint', ''),
         chat_deployment: cfg.get<string>('chatDeployment', ''),
         completion_deployment: cfg.get<string>('completionDeployment', ''),
         embedding_deployment: cfg.get<string>('embeddingDeployment', ''),
         log_level: cfg.get<string>('logLevel', 'info'),
+        agent_max_steps: cfg.get<number>('agent.maxSteps', 12),
+        agent_allow_shell: cfg.get<boolean>('agent.allowShell', false),
+        agent_allow_write: cfg.get<boolean>('agent.allowWrite', false),
+        workspace_root: folder ? folder.uri.fsPath : '',
     };
     try {
         await Methods.configSet(rpc, payload);
-        if (output) output.appendLine(`[ext] pushed settings (endpoint=${payload.endpoint ? 'set' : 'empty'})`);
+        if (output) output.appendLine(`[ext] pushed settings (endpoint=${payload.endpoint ? 'set' : 'empty'}, root=${payload.workspace_root || 'none'})`);
     } catch (err: unknown) {
         const m = err instanceof Error ? err.message : String(err);
         if (output) output.appendLine(`[ext] config/set rejected: ${m}`);

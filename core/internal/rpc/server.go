@@ -14,8 +14,10 @@ import (
 	"github.com/creachadair/jrpc2/channel"
 	"github.com/creachadair/jrpc2/handler"
 
+	"github.com/patmeh1/foundry-copilot/core/internal/agent"
 	"github.com/patmeh1/foundry-copilot/core/internal/config"
 	"github.com/patmeh1/foundry-copilot/core/internal/foundry"
+	"github.com/patmeh1/foundry-copilot/core/internal/tools"
 )
 
 // Server bundles the dependencies the RPC handlers need.
@@ -266,18 +268,91 @@ func sanitizeCompletion(s string) string {
 }
 
 type AgentRunParams struct {
-	Task     string         `json:"task"`
-	Workdir  string         `json:"workdir"`
-	Settings map[string]any `json:"settings,omitempty"`
+	StreamID string `json:"stream_id"`
+	Task     string `json:"task"`
+	Workdir  string `json:"workdir,omitempty"`
+	System   string `json:"system,omitempty"`
+	MaxSteps int    `json:"max_steps,omitempty"`
 }
 type AgentRunReply struct {
+	StreamID     string `json:"stream_id"`
 	FinalMessage string `json:"final_message"`
 	StepsTaken   int    `json:"steps_taken"`
 }
 
-// AgentRun runs the agent loop. Phase 5 will wire the tool registry + loop.
+type AgentEventNotification struct {
+	StreamID   string `json:"stream_id"`
+	Kind       string `json:"kind"`
+	Step       int    `json:"step"`
+	Text       string `json:"text,omitempty"`
+	ToolName   string `json:"tool,omitempty"`
+	ToolArgs   string `json:"args,omitempty"`
+	ToolResult string `json:"result,omitempty"`
+	ToolError  string `json:"tool_error,omitempty"`
+}
+
+// AgentRun runs the agent loop. Events are pushed to the client as
+// "agent/event" notifications tagged with the StreamID; the reply is
+// returned once the loop terminates.
 func (s *Server) AgentRun(ctx context.Context, p AgentRunParams) (AgentRunReply, error) {
-	return AgentRunReply{FinalMessage: "agent stub — Phase 5", StepsTaken: 0}, nil
+	if s.Foundry == nil {
+		return AgentRunReply{}, fmt.Errorf("foundry client not configured")
+	}
+	if p.StreamID == "" {
+		return AgentRunReply{}, fmt.Errorf("stream_id required")
+	}
+	if strings.TrimSpace(p.Task) == "" {
+		return AgentRunReply{}, fmt.Errorf("task required")
+	}
+	cfg := config.Get()
+	root := p.Workdir
+	if root == "" {
+		root = cfg.WorkspaceRoot
+	}
+	if root == "" {
+		return AgentRunReply{}, fmt.Errorf("workdir required (or set workspace_root via config/set)")
+	}
+	dep := cfg.ChatDeployment
+	if dep == "" {
+		return AgentRunReply{}, fmt.Errorf("no chat deployment configured")
+	}
+	maxSteps := p.MaxSteps
+	if maxSteps <= 0 {
+		maxSteps = cfg.AgentMaxSteps
+	}
+	if maxSteps <= 0 {
+		maxSteps = 12
+	}
+	reg := tools.NewRegistry()
+	reg.Register(tools.FSRead{Root: root})
+	reg.Register(tools.CodeSearch{Root: root})
+	reg.Register(tools.FSWrite{Root: root, Allow: cfg.AgentAllowWrite})
+	reg.Register(tools.Shell{Root: root, Allow: cfg.AgentAllowShell})
+
+	loop := &agent.Loop{
+		Foundry:    s.Foundry,
+		Tools:      reg,
+		Deployment: dep,
+		System:     p.System,
+		MaxSteps:   maxSteps,
+	}
+	srv := jrpc2.ServerFromContext(ctx)
+	final, steps, err := loop.Run(ctx, p.Task, func(e agent.Event) {
+		_ = srv.Notify(ctx, "agent/event", AgentEventNotification{
+			StreamID:   p.StreamID,
+			Kind:       e.Kind,
+			Step:       e.Step,
+			Text:       e.Text,
+			ToolName:   e.ToolName,
+			ToolArgs:   e.ToolArgs,
+			ToolResult: e.ToolResult,
+			ToolError:  e.ToolError,
+		})
+	})
+	if err != nil {
+		return AgentRunReply{StreamID: p.StreamID, FinalMessage: final, StepsTaken: steps}, err
+	}
+	return AgentRunReply{StreamID: p.StreamID, FinalMessage: final, StepsTaken: steps}, nil
 }
 
 type IndexRefreshParams struct {

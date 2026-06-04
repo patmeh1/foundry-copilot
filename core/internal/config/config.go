@@ -1,9 +1,9 @@
 // Package config is the typed, layered settings store for the sidecar.
 // Layering (lowest to highest precedence):
-//   1. compiled-in defaults
-//   2. config file (YAML) under $XDG_CONFIG_HOME/foundry-copilot/config.yaml
-//   3. environment variables prefixed FOUNDRY_COPILOT_
-//   4. JSON-RPC `config/set` calls from the extension at runtime
+//  1. compiled-in defaults
+//  2. config file (YAML) under $XDG_CONFIG_HOME/foundry-copilot/config.yaml
+//  3. environment variables prefixed FOUNDRY_COPILOT_
+//  4. JSON-RPC `config/set` calls from the extension at runtime
 package config
 
 import (
@@ -18,14 +18,17 @@ import (
 
 // Config is the typed view of all sidecar settings.
 type Config struct {
-	Endpoint              string `mapstructure:"endpoint"`
-	ChatDeployment        string `mapstructure:"chat_deployment"`
-	CompletionDeployment  string `mapstructure:"completion_deployment"`
-	EmbeddingDeployment   string `mapstructure:"embedding_deployment"`
-	LogLevel              string `mapstructure:"log_level"`
-	AgentMaxSteps         int    `mapstructure:"agent_max_steps"`
-	RAGIndexDir           string `mapstructure:"rag_index_dir"`
-	SessionDir            string `mapstructure:"session_dir"`
+	Endpoint             string `mapstructure:"endpoint"`
+	ChatDeployment       string `mapstructure:"chat_deployment"`
+	CompletionDeployment string `mapstructure:"completion_deployment"`
+	EmbeddingDeployment  string `mapstructure:"embedding_deployment"`
+	LogLevel             string `mapstructure:"log_level"`
+	AgentMaxSteps        int    `mapstructure:"agent_max_steps"`
+	AgentAllowShell      bool   `mapstructure:"agent_allow_shell"`
+	AgentAllowWrite      bool   `mapstructure:"agent_allow_write"`
+	WorkspaceRoot        string `mapstructure:"workspace_root"`
+	RAGIndexDir          string `mapstructure:"rag_index_dir"`
+	SessionDir           string `mapstructure:"session_dir"`
 }
 
 var (
@@ -127,5 +130,12 @@ func Update(in Config) Config {
 	if in.AgentMaxSteps > 0 {
 		curr.AgentMaxSteps = in.AgentMaxSteps
 	}
+	if in.WorkspaceRoot != "" {
+		curr.WorkspaceRoot = in.WorkspaceRoot
+	}
+	// Booleans always overwrite — the extension sends the user's current
+	// trust-level toggles every time it calls config/set.
+	curr.AgentAllowShell = in.AgentAllowShell
+	curr.AgentAllowWrite = in.AgentAllowWrite
 	return curr
 }

@@ -24,7 +24,13 @@
         "name": "foundry",
         "fullName": "Foundry Copilot",
         "description": "Chat with a Microsoft Foundry model — hard-locked, Entra-authenticated.",
-        "isSticky": true
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "agent",
+            "description": "Run the tool-using agent loop on your workspace."
+          }
+        ]
       }
     ],
     "commands": [
@@ -63,6 +69,23 @@
           "type": "string",
           "default": "",
           "description": "Deployment name for embeddings (used by RAG)."
+        },
+        "foundryCopilot.agent.maxSteps": {
+          "type": "integer",
+          "default": 12,
+          "minimum": 1,
+          "maximum": 64,
+          "description": "Maximum tool-use steps per @foundry /agent invocation."
+        },
+        "foundryCopilot.agent.allowWrite": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Permit the `fs_write` tool. **Disabled by default** for safety; turn on to let the agent create/overwrite files in the workspace."
+        },
+        "foundryCopilot.agent.allowShell": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Permit the `shell` tool. **Disabled by default** for safety; turn on to let the agent run shell commands in the workspace."
         },
         "foundryCopilot.logLevel": {
           "type": "string",

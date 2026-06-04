@@ -165,6 +165,9 @@ export interface SidecarConfig {
     embedding_deployment?: string;
     log_level?: string;
     agent_max_steps?: number;
+    agent_allow_shell?: boolean;
+    agent_allow_write?: boolean;
+    workspace_root?: string;
 }
 
 export interface ChatMessage {
@@ -194,6 +197,29 @@ export interface ChatChunk {
     error?: string;
 }
 
+export interface AgentRunParams {
+    stream_id: string;
+    task: string;
+    workdir?: string;
+    system?: string;
+    max_steps?: number;
+}
+export interface AgentRunReply {
+    stream_id: string;
+    final_message: string;
+    steps_taken: number;
+}
+export interface AgentEvent {
+    stream_id: string;
+    kind: 'think' | 'tool_call' | 'tool_result' | 'final' | 'error';
+    step: number;
+    text?: string;
+    tool?: string;
+    args?: string;
+    result?: string;
+    tool_error?: string;
+}
+
 export const Methods = {
     ping(rpc: RpcClient): Promise<PingReply> {
         return rpc.request<PingReply>('ping');
@@ -209,5 +235,8 @@ export const Methods = {
     },
     chatStart(rpc: RpcClient, p: ChatStartParams): Promise<ChatStartReply> {
         return rpc.request<ChatStartReply>('chat/start', p);
+    },
+    agentRun(rpc: RpcClient, p: AgentRunParams): Promise<AgentRunReply> {
+        return rpc.request<AgentRunReply>('agent/run', p);
     },
 };
