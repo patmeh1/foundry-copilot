@@ -186,7 +186,10 @@ func toOpenAIMessages(msgs []ChatMessage) []openai.ChatCompletionMessageParamUni
 	return out
 }
 
-// Embed returns a single embedding vector for each input. Stub for Phase 7.
+// Embed returns one embedding vector per input string. Inputs are sent
+// in a single request; callers should batch (≤ ~64 inputs per call) to
+// stay under the embedding endpoint's token budget. The hard-lock
+// HTTP client + bearer middleware apply just like Chat().
 func (c *Client) Embed(ctx context.Context, deployment string, inputs []string) ([][]float32, error) {
 	if c.inner == nil {
 		return nil, fmt.Errorf("foundry-copilot: client not initialised")
@@ -194,8 +197,29 @@ func (c *Client) Embed(ctx context.Context, deployment string, inputs []string) 
 	if deployment == "" {
 		return nil, fmt.Errorf("foundry-copilot: empty embedding deployment")
 	}
-	// Phase-7 stub.
+	if len(inputs) == 0 {
+		return nil, nil
+	}
+	params := openai.EmbeddingNewParams{
+		Model: openai.EmbeddingModel(deployment),
+		Input: openai.EmbeddingNewParamsInputUnion{OfArrayOfStrings: inputs},
+	}
+	resp, err := c.inner.Embeddings.New(ctx, params)
+	if err != nil {
+		return nil, err
+	}
 	out := make([][]float32, len(inputs))
+	for _, e := range resp.Data {
+		idx := int(e.Index)
+		if idx < 0 || idx >= len(inputs) {
+			continue
+		}
+		v := make([]float32, len(e.Embedding))
+		for i, x := range e.Embedding {
+			v[i] = float32(x)
+		}
+		out[idx] = v
+	}
 	return out, nil
 }
 

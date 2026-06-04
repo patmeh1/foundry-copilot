@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/creachadair/jrpc2"
 	"github.com/creachadair/jrpc2/channel"
@@ -17,6 +19,7 @@ import (
 	"github.com/patmeh1/foundry-copilot/core/internal/agent"
 	"github.com/patmeh1/foundry-copilot/core/internal/config"
 	"github.com/patmeh1/foundry-copilot/core/internal/foundry"
+	"github.com/patmeh1/foundry-copilot/core/internal/rag"
 	"github.com/patmeh1/foundry-copilot/core/internal/tools"
 )
 
@@ -25,6 +28,29 @@ type Server struct {
 	Log     *slog.Logger
 	Foundry *foundry.Client // nil-allowed; populated once endpoint is set
 	Version string
+
+	storeMu sync.Mutex
+	store   *rag.Store
+}
+
+// ragStore returns the lazily-initialised vector store, opened from
+// cfg.RAGIndexDir. Safe for concurrent use.
+func (s *Server) ragStore() (*rag.Store, error) {
+	s.storeMu.Lock()
+	defer s.storeMu.Unlock()
+	if s.store != nil {
+		return s.store, nil
+	}
+	dir := config.Get().RAGIndexDir
+	if dir == "" {
+		return nil, fmt.Errorf("rag: index dir not configured")
+	}
+	store, err := rag.Open(filepath.Join(dir, "store.gob"))
+	if err != nil {
+		return nil, err
+	}
+	s.store = store
+	return store, nil
 }
 
 // Run starts the JSON-RPC server on the provided in/out streams (typically
@@ -328,6 +354,16 @@ func (s *Server) AgentRun(ctx context.Context, p AgentRunParams) (AgentRunReply,
 	reg.Register(tools.CodeSearch{Root: root})
 	reg.Register(tools.FSWrite{Root: root, Allow: cfg.AgentAllowWrite})
 	reg.Register(tools.Shell{Root: root, Allow: cfg.AgentAllowShell})
+	// Only expose rag_search if the index has been built and an embedding
+	// deployment is configured. The store opens lazily and reports Len()==0
+	// when empty, in which case we omit the tool entirely.
+	if cfg.EmbeddingDeployment != "" {
+		if store, err := s.ragStore(); err == nil && store.Len() > 0 {
+			reg.Register(tools.RAGSearch{
+				Foundry: s.Foundry, Store: store, Deployment: cfg.EmbeddingDeployment,
+			})
+		}
+	}
 
 	loop := &agent.Loop{
 		Foundry:    s.Foundry,
@@ -356,13 +392,139 @@ func (s *Server) AgentRun(ctx context.Context, p AgentRunParams) (AgentRunReply,
 }
 
 type IndexRefreshParams struct {
-	Paths []string `json:"paths"` // absolute paths to (re)index
+	Paths    []string `json:"paths,omitempty"`     // optional explicit list (workspace-relative or absolute)
+	MaxFiles int      `json:"max_files,omitempty"` // cap; default 4000
 }
 type IndexRefreshReply struct {
-	Indexed int `json:"indexed"`
+	Files   int `json:"files"`
+	Chunks  int `json:"chunks"`
+	Skipped int `json:"skipped"`
 }
 
-// IndexRefresh re-indexes the given paths. Phase 7 will wire chromem-go.
+// IndexRefresh rebuilds the workspace index. If Paths is empty the entire
+// workspace_root is walked (with the standard noise-dir denylist).
 func (s *Server) IndexRefresh(ctx context.Context, p IndexRefreshParams) (IndexRefreshReply, error) {
-	return IndexRefreshReply{Indexed: 0}, nil
+	if s.Foundry == nil {
+		return IndexRefreshReply{}, fmt.Errorf("foundry client not configured")
+	}
+	cfg := config.Get()
+	if cfg.EmbeddingDeployment == "" {
+		return IndexRefreshReply{}, fmt.Errorf("embedding_deployment required")
+	}
+	if cfg.WorkspaceRoot == "" {
+		return IndexRefreshReply{}, fmt.Errorf("workspace_root required")
+	}
+	store, err := s.ragStore()
+	if err != nil {
+		return IndexRefreshReply{}, err
+	}
+	files := p.Paths
+	if len(files) == 0 {
+		max := p.MaxFiles
+		if max <= 0 {
+			max = 4000
+		}
+		files, err = rag.WalkWorkspace(ctx, cfg.WorkspaceRoot, max)
+		if err != nil {
+			return IndexRefreshReply{}, err
+		}
+	}
+	// Chunk first.
+	var allChunks []rag.Chunk
+	skipped := 0
+	for _, rel := range files {
+		full := rel
+		if !filepath.IsAbs(full) {
+			full = filepath.Join(cfg.WorkspaceRoot, rel)
+		} else {
+			r, err := filepath.Rel(cfg.WorkspaceRoot, full)
+			if err == nil {
+				rel = r
+			}
+		}
+		cs, err := rag.ChunkFile(full, rel, rag.ChunkOptions{})
+		if err != nil {
+			skipped++
+			continue
+		}
+		allChunks = append(allChunks, cs...)
+	}
+	// Embed in batches of 64.
+	const batch = 64
+	for start := 0; start < len(allChunks); start += batch {
+		if err := ctx.Err(); err != nil {
+			return IndexRefreshReply{}, err
+		}
+		end := start + batch
+		if end > len(allChunks) {
+			end = len(allChunks)
+		}
+		inputs := make([]string, end-start)
+		for i := start; i < end; i++ {
+			inputs[i-start] = allChunks[i].Text
+		}
+		vecs, err := s.Foundry.Embed(ctx, cfg.EmbeddingDeployment, inputs)
+		if err != nil {
+			return IndexRefreshReply{}, fmt.Errorf("embed batch %d: %w", start/batch, err)
+		}
+		for i := range vecs {
+			allChunks[start+i].Vec = vecs[i]
+		}
+	}
+	if err := store.Replace(allChunks); err != nil {
+		return IndexRefreshReply{}, err
+	}
+	s.Log.Info("index refresh complete",
+		"files", len(files), "chunks", len(allChunks), "skipped", skipped)
+	return IndexRefreshReply{Files: len(files), Chunks: len(allChunks), Skipped: skipped}, nil
+}
+
+type IndexQueryParams struct {
+	Query string `json:"query"`
+	K     int    `json:"k,omitempty"` // default 8
+}
+type IndexHit struct {
+	Path      string  `json:"path"`
+	StartLine int     `json:"start_line"`
+	EndLine   int     `json:"end_line"`
+	Text      string  `json:"text"`
+	Score     float32 `json:"score"`
+}
+type IndexQueryReply struct {
+	Hits []IndexHit `json:"hits"`
+}
+
+// IndexQuery embeds the query and returns the top-K most similar chunks.
+func (s *Server) IndexQuery(ctx context.Context, p IndexQueryParams) (IndexQueryReply, error) {
+	if s.Foundry == nil {
+		return IndexQueryReply{}, fmt.Errorf("foundry client not configured")
+	}
+	if strings.TrimSpace(p.Query) == "" {
+		return IndexQueryReply{}, fmt.Errorf("query required")
+	}
+	cfg := config.Get()
+	if cfg.EmbeddingDeployment == "" {
+		return IndexQueryReply{}, fmt.Errorf("embedding_deployment required")
+	}
+	k := p.K
+	if k <= 0 {
+		k = 8
+	}
+	store, err := s.ragStore()
+	if err != nil {
+		return IndexQueryReply{}, err
+	}
+	vecs, err := s.Foundry.Embed(ctx, cfg.EmbeddingDeployment, []string{p.Query})
+	if err != nil || len(vecs) == 0 {
+		return IndexQueryReply{}, fmt.Errorf("embed query: %v", err)
+	}
+	hits := store.Search(vecs[0], k)
+	out := IndexQueryReply{Hits: make([]IndexHit, 0, len(hits))}
+	for _, h := range hits {
+		out.Hits = append(out.Hits, IndexHit{
+			Path: h.Chunk.Path, StartLine: h.Chunk.StartLine, EndLine: h.Chunk.EndLine,
+			Text: h.Chunk.Text, Score: h.Score,
+		})
+	}
+	return out, nil
 }

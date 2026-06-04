@@ -101,6 +101,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
         vscode.commands.registerCommand('foundryCopilot.showOutput', () => output!.show()),
+        vscode.commands.registerCommand('foundryCopilot.refreshIndex', async () => {
+            if (!rpc) {
+                vscode.window.showErrorMessage('Foundry Copilot: sidecar not ready');
+                return;
+            }
+            await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'Foundry Copilot: indexing workspace…',
+                    cancellable: false,
+                },
+                async (progress) => {
+                    progress.report({ message: 'walking files & embedding (this can take a minute)' });
+                    try {
+                        const r = await Methods.indexRefresh(rpc!, {});
+                        vscode.window.showInformationMessage(
+                            `Indexed ${r.files} files → ${r.chunks} chunks (skipped ${r.skipped}).`,
+                        );
+                    } catch (err: unknown) {
+                        const m = err instanceof Error ? err.message : String(err);
+                        vscode.window.showErrorMessage(`Index refresh failed: ${m}`);
+                    }
+                },
+            );
+        }),
     );
 }
 

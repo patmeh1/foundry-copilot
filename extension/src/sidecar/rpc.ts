@@ -220,6 +220,30 @@ export interface AgentEvent {
     tool_error?: string;
 }
 
+export interface IndexRefreshParams {
+    paths?: string[];
+    max_files?: number;
+}
+export interface IndexRefreshReply {
+    files: number;
+    chunks: number;
+    skipped: number;
+}
+export interface IndexQueryParams {
+    query: string;
+    k?: number;
+}
+export interface IndexHit {
+    path: string;
+    start_line: number;
+    end_line: number;
+    text: string;
+    score: number;
+}
+export interface IndexQueryReply {
+    hits: IndexHit[];
+}
+
 export const Methods = {
     ping(rpc: RpcClient): Promise<PingReply> {
         return rpc.request<PingReply>('ping');
@@ -238,5 +262,11 @@ export const Methods = {
     },
     agentRun(rpc: RpcClient, p: AgentRunParams): Promise<AgentRunReply> {
         return rpc.request<AgentRunReply>('agent/run', p);
+    },
+    indexRefresh(rpc: RpcClient, p: IndexRefreshParams = {}): Promise<IndexRefreshReply> {
+        return rpc.request<IndexRefreshReply>('index/refresh', p);
+    },
+    indexQuery(rpc: RpcClient, p: IndexQueryParams): Promise<IndexQueryReply> {
+        return rpc.request<IndexQueryReply>('index/query', p);
     },
 };

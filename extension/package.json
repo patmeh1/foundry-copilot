@@ -44,6 +44,11 @@
         "command": "foundryCopilot.showOutput",
         "title": "Foundry Copilot: Show Output Channel",
         "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.refreshIndex",
+        "title": "Foundry Copilot: Refresh Workspace Index",
+        "category": "Foundry Copilot"
       }
     ],
     "configuration": {
