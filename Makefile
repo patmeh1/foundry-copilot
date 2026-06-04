@@ -3,7 +3,7 @@
 # All Go work lives in ./core; all TS extension work in ./extension.
 
 .PHONY: help deps build build-go build-ext test test-lock test-go test-ext lint \
-        sidecar harness vsix clean smoke run-sidecar run-harness
+        sidecar harness vsix vsix-all sidecars-all clean smoke run-sidecar run-harness
 
 GO          ?= go
 GO_PKG       = ./...
@@ -52,6 +52,30 @@ lint: ## Run Go vet + TS lint
 
 vsix: build ## Package a VSIX for the current platform
 	cd extension && $(NPM) run package
+
+# Map our PLATFORMS naming → (GOOS, GOARCH, vsce target, npm script).
+# Build a sidecar + harness binary for each, then vsce package per platform.
+sidecars-all: ## Cross-compile sidecar + harness for all PLATFORMS
+	@set -e; \
+	for p in $(PLATFORMS); do \
+	    case $$p in \
+	        darwin-arm64)   GOOS=darwin  GOARCH=arm64 ;; \
+	        darwin-amd64)   GOOS=darwin  GOARCH=amd64 ;; \
+	        linux-amd64)    GOOS=linux   GOARCH=amd64 ;; \
+	        linux-arm64)    GOOS=linux   GOARCH=arm64 ;; \
+	        windows-amd64)  GOOS=windows GOARCH=amd64 ;; \
+	        *) echo "unknown platform $$p" >&2; exit 1 ;; \
+	    esac; \
+	    out=extension/bin/$$p; \
+	    mkdir -p $$out; \
+	    ext=""; if [ "$$GOOS" = "windows" ]; then ext=.exe; fi; \
+	    echo ">> building $$p ($$GOOS/$$GOARCH)"; \
+	    (cd core && GOOS=$$GOOS GOARCH=$$GOARCH CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-s -w" -o ../$$out/foundry-copilot-sidecar$$ext ./cmd/sidecar); \
+	    (cd core && GOOS=$$GOOS GOARCH=$$GOARCH CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-s -w" -o ../$$out/foundry-copilot$$ext ./cmd/harness); \
+	done
+
+vsix-all: ## Build one VSIX per platform (each bundles only its own binaries)
+	./scripts/package-all.sh
 
 clean: ## Remove build artifacts
 	rm -rf extension/bin extension/out extension/dist extension/*.vsix

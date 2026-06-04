@@ -84,7 +84,34 @@ make test
 
 # Package a platform-specific VSIX for your machine
 make vsix
+
+# Build VSIXes for every platform at once (darwin/linux/win × amd64/arm64)
+make vsix-all
 ```
+
+## Install from a VSIX
+
+Each release ships one VSIX per platform, each bundling only that platform's
+sidecar + harness binaries (so artifacts stay small):
+
+| Platform | File |
+|---|---|
+| macOS (Apple Silicon) | `foundry-copilot-darwin-arm64.vsix` |
+| macOS (Intel) | `foundry-copilot-darwin-x64.vsix` |
+| Linux (x64) | `foundry-copilot-linux-x64.vsix` |
+| Linux (arm64) | `foundry-copilot-linux-arm64.vsix` |
+| Windows (x64) | `foundry-copilot-win32-x64.vsix` |
+
+```bash
+code --install-extension foundry-copilot-darwin-arm64.vsix
+```
+
+Then set `foundryCopilot.endpoint` in VS Code settings and run `az login`.
+
+## Releases
+
+Tagging `v*.*.*` on `main` runs `.github/workflows/release.yml`, which builds
+all five VSIXes and attaches them to a GitHub Release.
 
 ## Authentication
 

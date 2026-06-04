@@ -1,0 +1,40 @@
+name: release
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: core/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: extension/package-lock.json
+
+      - name: Install extension deps
+        working-directory: extension
+        run: npm ci
+
+      - name: Hard-lock tests (gate)
+        working-directory: core
+        run: go test -race -count=1 -v ./internal/foundry/...
+
+      - name: Build VSIXes for every platform
+        run: ./scripts/package-all.sh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: extension/*.vsix
+          generate_release_notes: true

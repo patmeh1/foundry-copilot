@@ -124,11 +124,18 @@
   },
   "scripts": {
     "build": "tsc -p .",
-    "watch": "tsc -p . --watch"
+    "watch": "tsc -p . --watch",
+    "package": "vsce package --no-dependencies --out foundry-copilot.vsix",
+    "package:darwin-arm64": "vsce package --no-dependencies --target darwin-arm64 --out foundry-copilot-darwin-arm64.vsix",
+    "package:darwin-x64": "vsce package --no-dependencies --target darwin-x64 --out foundry-copilot-darwin-x64.vsix",
+    "package:linux-x64": "vsce package --no-dependencies --target linux-x64 --out foundry-copilot-linux-x64.vsix",
+    "package:linux-arm64": "vsce package --no-dependencies --target linux-arm64 --out foundry-copilot-linux-arm64.vsix",
+    "package:win32-x64": "vsce package --no-dependencies --target win32-x64 --out foundry-copilot-win32-x64.vsix"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.2.1",
     "typescript": "^5.5.4"
   }
 }
