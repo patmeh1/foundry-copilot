@@ -1,3 +1,4 @@
+package rag
 // Package rag is the workspace indexing + retrieval layer used by the
 // /agent loop's rag_search tool and the index/* RPC methods.
 //

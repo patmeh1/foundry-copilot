@@ -3,6 +3,9 @@
 GitHub Copilot–style coding assistant for VS Code — **locked** to models
 deployed in your Microsoft Foundry / Azure AI tenant.
 
+👉 **Full step-by-step setup:** see the
+[User Guide](https://github.com/patmeh1/foundry-copilot/blob/main/docs/USER_GUIDE.md).
+
 ## Why this exists
 
 GitHub Copilot calls models hosted by GitHub. This extension calls models

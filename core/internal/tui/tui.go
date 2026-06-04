@@ -60,11 +60,11 @@ func Run(ctx context.Context, initialMode Mode) error {
 // ─── model ────────────────────────────────────────────────────────────────
 
 type model struct {
-	cfg     config.Config
-	client  *foundry.Client
-	mode    Mode
-	width   int
-	height  int
+	cfg    config.Config
+	client *foundry.Client
+	mode   Mode
+	width  int
+	height int
 
 	viewport viewport.Model
 	input    textarea.Model
@@ -101,12 +101,12 @@ func newModel(cfg config.Config, client *foundry.Client, mode Mode) *model {
 	ta.CharLimit = 8000
 	vp := viewport.New(80, 20)
 	return &model{
-		cfg:    cfg,
-		client: client,
-		mode:   mode,
-		input:  ta,
+		cfg:      cfg,
+		client:   client,
+		mode:     mode,
+		input:    ta,
 		viewport: vp,
-		status: "ready",
+		status:   "ready",
 		history: []historyEntry{{
 			speaker: "system",
 			body: fmt.Sprintf("foundry-copilot TUI · mode=%s · endpoint=%s",
@@ -125,10 +125,10 @@ type assistantChunkMsg struct {
 	err      error
 }
 type agentEventMsg struct {
-	event   agent.Event
-	final   bool
-	final_  string // populated when final
-	err     error
+	event  agent.Event
+	final  bool
+	final_ string // populated when final
+	err    error
 }
 type tickMsg time.Time
 

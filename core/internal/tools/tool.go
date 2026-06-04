@@ -26,7 +26,7 @@ type Tool interface {
 
 // Registry is an ordered set of tools indexed by name.
 type Registry struct {
-	order []string
+	order  []string
 	byName map[string]Tool
 }
 

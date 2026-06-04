@@ -4,6 +4,8 @@ A GitHub Copilot–style VS Code extension and standalone CLI/TUI coding harness
 
 > **Why it exists**: most Copilot-style assistants route to OpenAI, Anthropic, or Ollama. `foundry-copilot` enforces — by construction — that every chat, completion, embedding, and agent step goes to a Microsoft Foundry endpoint authenticated via Microsoft Entra ID. No API-key bypass. No "advanced provider" override. The lock lives in one Go module and every code path traverses it.
 
+**📖 End users: jump straight to the [User Guide](docs/USER_GUIDE.md).**
+
 ## Architecture
 
 ```
