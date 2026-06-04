@@ -31,6 +31,7 @@ func (s *Server) Run(ctx context.Context, in io.Reader, out io.WriteCloser) erro
 	opts := &jrpc2.ServerOptions{
 		Logger:      func(text string) { s.Log.Debug(text) },
 		Concurrency: 8,
+		AllowPush:   true, // Phase 3+ pushes chat/chunk notifications.
 	}
 	srv := jrpc2.NewServer(s.methods(), opts).Start(ch)
 	done := make(chan error, 1)
@@ -51,6 +52,7 @@ func (s *Server) methods() handler.Map {
 		"version":         handler.New(s.Version_),
 		"config/set":      handler.New(s.ConfigSet),
 		"config/get":      handler.New(s.ConfigGet),
+		"chat/start":      handler.New(s.ChatStart),
 		"chat/stream":     handler.New(s.ChatStream),
 		"complete/inline": handler.New(s.CompleteInline),
 		"agent/run":       handler.New(s.AgentRun),
@@ -134,6 +136,74 @@ func (s *Server) ChatStream(ctx context.Context, p ChatStreamParams) (ChatStream
 	return ChatStreamReply{Chunks: chunks}, nil
 }
 
+// ─── chat/start (streaming via notifications) ──────────────────────────────
+
+type ChatStartParams struct {
+	StreamID    string                `json:"stream_id"`
+	Deployment  string                `json:"deployment,omitempty"`
+	Messages    []foundry.ChatMessage `json:"messages"`
+	Temperature *float32              `json:"temperature,omitempty"`
+	MaxTokens   *int32                `json:"max_tokens,omitempty"`
+}
+
+type ChatStartReply struct {
+	StreamID     string `json:"stream_id"`
+	FinishReason string `json:"finish_reason,omitempty"`
+}
+
+type ChatChunkNotification struct {
+	StreamID     string `json:"stream_id"`
+	Delta        string `json:"delta,omitempty"`
+	FinishReason string `json:"finish_reason,omitempty"`
+	Err          string `json:"error,omitempty"`
+}
+
+// ChatStart kicks off a streaming chat call. Chunks are pushed as
+// "chat/chunk" notifications tagged with the same StreamID. The reply
+// returns once the stream terminates (finish_reason from the last chunk).
+func (s *Server) ChatStart(ctx context.Context, p ChatStartParams) (ChatStartReply, error) {
+	if s.Foundry == nil {
+		return ChatStartReply{}, fmt.Errorf("foundry client not configured (set endpoint via config/set)")
+	}
+	if p.StreamID == "" {
+		return ChatStartReply{}, fmt.Errorf("stream_id required")
+	}
+	dep := p.Deployment
+	if dep == "" {
+		dep = config.Get().ChatDeployment
+	}
+	if dep == "" {
+		return ChatStartReply{}, fmt.Errorf("no chat deployment configured")
+	}
+	srv := jrpc2.ServerFromContext(ctx)
+	var lastFinish string
+	err := s.Foundry.Chat(ctx, foundry.ChatRequest{
+		Deployment:  dep,
+		Messages:    p.Messages,
+		Temperature: p.Temperature,
+		MaxTokens:   p.MaxTokens,
+		Stream:      true,
+	}, func(c foundry.ChatChunk) error {
+		if c.FinishReason != "" {
+			lastFinish = c.FinishReason
+		}
+		return srv.Notify(ctx, "chat/chunk", ChatChunkNotification{
+			StreamID:     p.StreamID,
+			Delta:        c.Delta,
+			FinishReason: c.FinishReason,
+			Err:          c.Err,
+		})
+	})
+	if err != nil {
+		_ = srv.Notify(ctx, "chat/chunk", ChatChunkNotification{
+			StreamID: p.StreamID, Err: err.Error(), FinishReason: "error",
+		})
+		return ChatStartReply{}, err
+	}
+	return ChatStartReply{StreamID: p.StreamID, FinishReason: lastFinish}, nil
+}
+
+// ───
 // ─── stubs for future phases ───────────────────────────────────────────────
 
 type CompleteInlineParams struct {

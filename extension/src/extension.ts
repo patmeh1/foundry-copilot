@@ -2,6 +2,7 @@
 // pushes VS Code settings into the sidecar, and exposes diagnostic
 // commands. Phase 3 will register the chat participant here.
 import * as vscode from 'vscode';
+import { registerChatParticipant } from './chat/participant';
 import { Methods, RpcClient, SidecarConfig } from './sidecar/rpc';
 import { Sidecar, platformId } from './sidecar/process';
 
@@ -64,6 +65,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
 
     await pushSettings();
+
+    // Phase 3: register the @foundry chat participant.
+    try {
+        registerChatParticipant(context, rpc, output);
+        output.appendLine('[ext] chat participant @foundry registered');
+    } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[ext] chat participant registration failed: ${m}`);
+    }
 
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((e) => {

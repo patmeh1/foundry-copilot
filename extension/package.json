@@ -18,6 +18,15 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "chatParticipants": [
+      {
+        "id": "foundryCopilot.chat",
+        "name": "foundry",
+        "fullName": "Foundry Copilot",
+        "description": "Chat with a Microsoft Foundry model — hard-locked, Entra-authenticated.",
+        "isSticky": true
+      }
+    ],
     "commands": [
       {
         "command": "foundryCopilot.ping",

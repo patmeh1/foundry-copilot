@@ -1,9 +1,6 @@
 // Minimal typed JSON-RPC 2.0 client over LSP-framed stdio.
 // The sidecar uses creachadair/jrpc2 with channel.LSP framing, which is
 // the same Content-Length: N\r\n\r\n{body} format used by LSP.
-//
-// We implement just enough framing/correlation to drive the sidecar. No
-// notifications from server → client are needed in Phase 2; Phase 3 adds them.
 import * as vscode from 'vscode';
 
 type Pending = {
@@ -11,6 +8,8 @@ type Pending = {
     reject: (err: Error) => void;
     method: string;
 };
+
+export type NotificationHandler = (params: unknown) => void;
 
 export class RpcClient {
     private nextId = 1;
@@ -20,6 +19,7 @@ export class RpcClient {
     private readonly output: vscode.OutputChannel;
     private stdin: NodeJS.WritableStream | undefined;
     private stdout: NodeJS.ReadableStream | undefined;
+    private notificationHandlers = new Map<string, Set<NotificationHandler>>();
 
     constructor(output: vscode.OutputChannel) {
         this.output = output;
@@ -38,7 +38,6 @@ export class RpcClient {
         this.stdout = undefined;
         this.readBuf = Buffer.alloc(0);
         this.contentLength = -1;
-        // Fail any outstanding requests so callers don't hang forever.
         for (const [, p] of this.pending) {
             p.reject(new Error('sidecar disconnected'));
         }
@@ -66,7 +65,7 @@ export class RpcClient {
         });
     }
 
-    /** Fire-and-forget notification (jsonrpc with no id). Phase 3 uses this. */
+    /** Fire-and-forget notification (jsonrpc with no id). */
     notify(method: string, params?: unknown): void {
         if (!this.stdin) throw new Error('rpc not attached');
         const body = JSON.stringify({ jsonrpc: '2.0', method, params });
@@ -74,15 +73,25 @@ export class RpcClient {
         this.stdin.write(frame);
     }
 
+    /** Subscribe to a server → client notification. Returns a disposer. */
+    onNotification(method: string, handler: NotificationHandler): vscode.Disposable {
+        let set = this.notificationHandlers.get(method);
+        if (!set) {
+            set = new Set();
+            this.notificationHandlers.set(method, set);
+        }
+        set.add(handler);
+        return { dispose: () => set!.delete(handler) };
+    }
+
     // ─── framing ─────────────────────────────────────────────────────────
 
     private onData(chunk: Buffer): void {
         this.readBuf = Buffer.concat([this.readBuf, chunk]);
-        // Loop because multiple frames can arrive in one chunk.
         while (true) {
             if (this.contentLength < 0) {
                 const headerEnd = this.readBuf.indexOf('\r\n\r\n');
-                if (headerEnd < 0) return; // wait for more
+                if (headerEnd < 0) return;
                 const header = this.readBuf.slice(0, headerEnd).toString('utf8');
                 const m = /Content-Length:\s*(\d+)/i.exec(header);
                 if (!m) {
@@ -93,7 +102,7 @@ export class RpcClient {
                 this.contentLength = parseInt(m[1], 10);
                 this.readBuf = this.readBuf.slice(headerEnd + 4);
             }
-            if (this.readBuf.length < this.contentLength) return; // wait
+            if (this.readBuf.length < this.contentLength) return;
             const body = this.readBuf.slice(0, this.contentLength).toString('utf8');
             this.readBuf = this.readBuf.slice(this.contentLength);
             this.contentLength = -1;
@@ -102,18 +111,32 @@ export class RpcClient {
     }
 
     private handleMessage(body: string): void {
-        let msg: { id?: number; result?: unknown; error?: { code: number; message: string } };
+        let msg: {
+            id?: number;
+            method?: string;
+            params?: unknown;
+            result?: unknown;
+            error?: { code: number; message: string };
+        };
         try {
             msg = JSON.parse(body);
         } catch (e) {
             this.output.appendLine(`[rpc] bad json: ${body}`);
             return;
         }
-        if (typeof msg.id !== 'number') {
-            // Notification from server → client. Phase 3 wires a dispatcher here.
-            this.output.appendLine(`[rpc] unhandled notification: ${body}`);
+        if (typeof msg.id !== 'number' && typeof msg.method === 'string') {
+            const set = this.notificationHandlers.get(msg.method);
+            if (set) {
+                for (const h of set) {
+                    try { h(msg.params); }
+                    catch (e) { this.output.appendLine(`[rpc] notif handler error: ${(e as Error).message}`); }
+                }
+            } else {
+                this.output.appendLine(`[rpc] unhandled notification: ${msg.method}`);
+            }
             return;
         }
+        if (typeof msg.id !== 'number') return;
         const pending = this.pending.get(msg.id);
         if (!pending) {
             this.output.appendLine(`[rpc] reply with unknown id ${msg.id}`);
@@ -128,7 +151,7 @@ export class RpcClient {
     }
 }
 
-// ─── typed wrappers for the methods we know ───────────────────────────────
+// ─── typed types & method wrappers ────────────────────────────────────────
 
 export interface PingReply {
     ok: boolean;
@@ -144,6 +167,33 @@ export interface SidecarConfig {
     agent_max_steps?: number;
 }
 
+export interface ChatMessage {
+    role: 'system' | 'user' | 'assistant' | 'tool';
+    content: string;
+    name?: string;
+    tool_id?: string;
+}
+
+export interface ChatStartParams {
+    stream_id: string;
+    deployment?: string;
+    messages: ChatMessage[];
+    temperature?: number;
+    max_tokens?: number;
+}
+
+export interface ChatStartReply {
+    stream_id: string;
+    finish_reason?: string;
+}
+
+export interface ChatChunk {
+    stream_id: string;
+    delta?: string;
+    finish_reason?: string;
+    error?: string;
+}
+
 export const Methods = {
     ping(rpc: RpcClient): Promise<PingReply> {
         return rpc.request<PingReply>('ping');
@@ -156,5 +206,8 @@ export const Methods = {
     },
     configGet(rpc: RpcClient): Promise<SidecarConfig> {
         return rpc.request<SidecarConfig>('config/get');
+    },
+    chatStart(rpc: RpcClient, p: ChatStartParams): Promise<ChatStartReply> {
+        return rpc.request<ChatStartReply>('chat/start', p);
     },
 };

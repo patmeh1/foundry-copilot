@@ -2,7 +2,9 @@ package foundry
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -11,6 +13,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 // Client is the thin Foundry wrapper used by the rest of the sidecar.
@@ -79,11 +83,9 @@ type ChatChunk struct {
 }
 
 // Chat streams the response from Foundry. The callback is invoked once per
-// chunk; it must be cheap (the network read blocks on it).
-//
-// NOTE: This is a minimal skeleton — it returns a stub stream until the
-// openai-go shape is wired up in Phase 3. The hard-lock contract is already
-// in place because c.inner uses LockedTransport + bearer middleware.
+// chunk; it must be cheap (the network read blocks on it). The hard-lock
+// contract is in place because c.inner uses LockedTransport + bearer
+// middleware.
 func (c *Client) Chat(ctx context.Context, req ChatRequest, onChunk func(ChatChunk) error) error {
 	if c.inner == nil {
 		return fmt.Errorf("foundry-copilot: client not initialised")
@@ -91,11 +93,56 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onChunk func(ChatChu
 	if req.Deployment == "" {
 		return fmt.Errorf("foundry-copilot: empty deployment name")
 	}
-	// Phase-3 will replace this stub with c.inner.Chat.Completions.NewStreaming(...).
-	return onChunk(ChatChunk{
-		Delta:        "[foundry-copilot] chat stub — Phase 3 wires openai-go streaming",
-		FinishReason: "stop",
-	})
+	params := openai.ChatCompletionNewParams{
+		Model:    shared.ChatModel(req.Deployment),
+		Messages: toOpenAIMessages(req.Messages),
+	}
+	if req.Temperature != nil {
+		params.Temperature = param.NewOpt(float64(*req.Temperature))
+	}
+	if req.MaxTokens != nil {
+		params.MaxCompletionTokens = param.NewOpt(int64(*req.MaxTokens))
+	}
+	stream := c.inner.Chat.Completions.NewStreaming(ctx, params)
+	defer stream.Close()
+	for stream.Next() {
+		chunk := stream.Current()
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		choice := chunk.Choices[0]
+		out := ChatChunk{
+			Delta:        choice.Delta.Content,
+			FinishReason: string(choice.FinishReason),
+		}
+		if err := onChunk(out); err != nil {
+			return err
+		}
+	}
+	if err := stream.Err(); err != nil && !errors.Is(err, io.EOF) {
+		_ = onChunk(ChatChunk{Err: err.Error()})
+		return err
+	}
+	return nil
+}
+
+// toOpenAIMessages converts our normalised ChatMessage slice into the
+// param-union slice openai-go expects.
+func toOpenAIMessages(msgs []ChatMessage) []openai.ChatCompletionMessageParamUnion {
+	out := make([]openai.ChatCompletionMessageParamUnion, 0, len(msgs))
+	for _, m := range msgs {
+		switch m.Role {
+		case "system":
+			out = append(out, openai.SystemMessage(m.Content))
+		case "assistant":
+			out = append(out, openai.AssistantMessage(m.Content))
+		case "user":
+			fallthrough
+		default:
+			out = append(out, openai.UserMessage(m.Content))
+		}
+	}
+	return out
 }
 
 // Embed returns a single embedding vector for each input. Stub for Phase 7.
