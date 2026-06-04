@@ -2,7 +2,7 @@
   "name": "foundry-copilot",
   "displayName": "Foundry Copilot",
   "description": "GitHub Copilot–style coding assistant locked to Microsoft Foundry models.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "patmeh1",
   "license": "MIT",
   "repository": {
