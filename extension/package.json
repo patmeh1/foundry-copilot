@@ -26,10 +26,11 @@
         "description": "Chat with a Microsoft Foundry model — hard-locked, Entra-authenticated.",
         "isSticky": true,
         "commands": [
-          {
-            "name": "agent",
-            "description": "Run the tool-using agent loop on your workspace."
-          }
+          { "name": "explain", "description": "Explain the selected code or the active file." },
+          { "name": "fix", "description": "Diagnose and fix bugs in the selected code." },
+          { "name": "tests", "description": "Generate unit tests for the selected code." },
+          { "name": "doc", "description": "Add documentation comments to the selected code." },
+          { "name": "agent", "description": "Run the tool-using agent loop on your workspace." }
         ]
       }
     ],

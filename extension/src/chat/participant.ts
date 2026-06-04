@@ -10,6 +10,13 @@ import {
     Methods,
     RpcClient,
 } from '../sidecar/rpc';
+import {
+    buildDoc,
+    buildExplain,
+    buildFix,
+    buildTests,
+    captureEditorContext,
+} from './slash';
 
 const PARTICIPANT_ID = 'foundryCopilot.chat';
 
@@ -24,8 +31,17 @@ export function registerChatParticipant(
         response,
         token,
     ) => {
-        if (request.command === 'agent') {
-            return runAgent(request, response, token, rpc, output);
+        switch (request.command) {
+            case 'agent':
+                return runAgent(request, response, token, rpc, output);
+            case 'explain':
+                return runSlash(buildExplain(request, captureEditorContext()), response, token, rpc, output);
+            case 'fix':
+                return runSlash(buildFix(request, captureEditorContext()), response, token, rpc, output);
+            case 'tests':
+                return runSlash(buildTests(request, captureEditorContext()), response, token, rpc, output);
+            case 'doc':
+                return runSlash(buildDoc(request, captureEditorContext()), response, token, rpc, output);
         }
         return runChat(request, chatContext, response, token, rpc, output);
     };
@@ -47,6 +63,28 @@ async function runChat(
     output: vscode.OutputChannel,
 ): Promise<void> {
     const messages = buildMessages(request, chatContext);
+    return streamChat(messages, response, token, rpc, output);
+}
+
+// ─── /explain, /fix, /tests, /doc share one streamer ──────────────────────
+
+async function runSlash(
+    messages: ChatMessage[],
+    response: vscode.ChatResponseStream,
+    token: vscode.CancellationToken,
+    rpc: RpcClient,
+    output: vscode.OutputChannel,
+): Promise<void> {
+    return streamChat(messages, response, token, rpc, output);
+}
+
+async function streamChat(
+    messages: ChatMessage[],
+    response: vscode.ChatResponseStream,
+    token: vscode.CancellationToken,
+    rpc: RpcClient,
+    output: vscode.OutputChannel,
+): Promise<void> {
     const streamId = `s-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     const sub = rpc.onNotification('chat/chunk', (params) => {
         const chunk = params as ChatChunk;
