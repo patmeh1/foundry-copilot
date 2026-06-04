@@ -1,0 +1,39 @@
+# Build artifacts
+extension/bin/
+extension/out/
+extension/dist/
+extension/*.vsix
+extension/node_modules/
+extension/.vscode-test/
+extension/coverage/
+
+# Webview build
+extension/src/chat/webview/dist/
+
+# Go
+core/bin/
+core/dist/
+*.test
+*.out
+core/coverage.txt
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+*.iml
+
+# Secrets / local config
+.env
+.env.local
+.foundry-copilot/
+*.local.yaml
+*.local.yml
+
+# Logs
+*.log
+
+# Smoke test artifacts
+scripts/smoke-output.json
