@@ -19,6 +19,7 @@ import (
 	"github.com/patmeh1/foundry-copilot/core/internal/agent"
 	"github.com/patmeh1/foundry-copilot/core/internal/config"
 	"github.com/patmeh1/foundry-copilot/core/internal/foundry"
+	"github.com/patmeh1/foundry-copilot/core/internal/mcpx"
 	"github.com/patmeh1/foundry-copilot/core/internal/rag"
 	"github.com/patmeh1/foundry-copilot/core/internal/tools"
 )
@@ -31,6 +32,15 @@ type Server struct {
 
 	storeMu sync.Mutex
 	store   *rag.Store
+
+	mcpOnce sync.Once
+	mcp     *mcpx.Manager
+}
+
+// mcpMgr returns the lazily-initialised MCP manager.
+func (s *Server) mcpMgr() *mcpx.Manager {
+	s.mcpOnce.Do(func() { s.mcp = mcpx.New() })
+	return s.mcp
 }
 
 // ragStore returns the lazily-initialised vector store, opened from
@@ -86,6 +96,12 @@ func (s *Server) methods() handler.Map {
 		"complete/inline": handler.New(s.CompleteInline),
 		"agent/run":       handler.New(s.AgentRun),
 		"index/refresh":   handler.New(s.IndexRefresh),
+		"index/query":     handler.New(s.IndexQuery),
+		"mcp/connect":     handler.New(s.MCPConnect),
+		"mcp/disconnect":  handler.New(s.MCPDisconnect),
+		"mcp/list":        handler.New(s.MCPList),
+		"mcp/list_tools":  handler.New(s.MCPListTools),
+		"mcp/call_tool":   handler.New(s.MCPCallTool),
 	}
 }
 
@@ -364,6 +380,19 @@ func (s *Server) AgentRun(ctx context.Context, p AgentRunParams) (AgentRunReply,
 			})
 		}
 	}
+	// Surface every tool from each connected MCP server. Adapter handles
+	// name namespacing (mcp__{server}__{tool}).
+	if mgr := s.mcpMgr(); mgr != nil {
+		for _, info := range mgr.ListAllTools(ctx) {
+			reg.Register(tools.MCPTool{
+				Manager:  mgr,
+				ServerID: info.ServerID,
+				ToolName: info.Name,
+				Desc:     info.Description,
+				Schema:   info.InputSchema,
+			})
+		}
+	}
 
 	loop := &agent.Loop{
 		Foundry:    s.Foundry,
@@ -527,4 +556,103 @@ func (s *Server) IndexQuery(ctx context.Context, p IndexQueryParams) (IndexQuery
 		})
 	}
 	return out, nil
+}
+
+// ─── MCP ──────────────────────────────────────────────────────────────────
+
+type MCPConnectParams struct {
+	ID      string            `json:"id"`
+	Command string            `json:"command"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+}
+type MCPConnectReply struct {
+	ID    string `json:"id"`
+	Tools int    `json:"tools"`
+}
+
+func (s *Server) MCPConnect(ctx context.Context, p MCPConnectParams) (MCPConnectReply, error) {
+	if err := s.mcpMgr().Connect(ctx, mcpx.ServerSpec{
+		ID: p.ID, Command: p.Command, Args: p.Args, Env: p.Env,
+	}); err != nil {
+		return MCPConnectReply{}, err
+	}
+	tools, _ := s.mcpMgr().ListTools(ctx, p.ID)
+	s.Log.Info("mcp connect", "id", p.ID, "tools", len(tools))
+	return MCPConnectReply{ID: p.ID, Tools: len(tools)}, nil
+}
+
+type MCPDisconnectParams struct {
+	ID string `json:"id"`
+}
+type MCPDisconnectReply struct {
+	OK bool `json:"ok"`
+}
+
+func (s *Server) MCPDisconnect(ctx context.Context, p MCPDisconnectParams) (MCPDisconnectReply, error) {
+	if err := s.mcpMgr().Disconnect(p.ID); err != nil {
+		return MCPDisconnectReply{}, err
+	}
+	return MCPDisconnectReply{OK: true}, nil
+}
+
+type MCPListReply struct {
+	Servers []string `json:"servers"`
+}
+
+func (s *Server) MCPList(ctx context.Context) (MCPListReply, error) {
+	return MCPListReply{Servers: s.mcpMgr().List()}, nil
+}
+
+type MCPListToolsParams struct {
+	ID string `json:"id"`
+}
+type MCPListToolsTool struct {
+	ServerID    string         `json:"server_id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"input_schema"`
+}
+type MCPListToolsReply struct {
+	Tools []MCPListToolsTool `json:"tools"`
+}
+
+func (s *Server) MCPListTools(ctx context.Context, p MCPListToolsParams) (MCPListToolsReply, error) {
+	var infos []mcpx.ToolInfo
+	if p.ID != "" {
+		var err error
+		infos, err = s.mcpMgr().ListTools(ctx, p.ID)
+		if err != nil {
+			return MCPListToolsReply{}, err
+		}
+	} else {
+		infos = s.mcpMgr().ListAllTools(ctx)
+	}
+	out := MCPListToolsReply{Tools: make([]MCPListToolsTool, 0, len(infos))}
+	for _, t := range infos {
+		out.Tools = append(out.Tools, MCPListToolsTool{
+			ServerID: t.ServerID, Name: t.Name,
+			Description: t.Description, InputSchema: t.InputSchema,
+		})
+	}
+	return out, nil
+}
+
+type MCPCallToolParams struct {
+	ID   string         `json:"id"`
+	Name string         `json:"name"`
+	Args map[string]any `json:"args,omitempty"`
+}
+type MCPCallToolReply struct {
+	Text  string `json:"text"`
+	Error string `json:"error,omitempty"`
+}
+
+func (s *Server) MCPCallTool(ctx context.Context, p MCPCallToolParams) (MCPCallToolReply, error) {
+	text, err := s.mcpMgr().CallTool(ctx, p.ID, p.Name, p.Args)
+	r := MCPCallToolReply{Text: text}
+	if err != nil {
+		r.Error = err.Error()
+	}
+	return r, nil
 }

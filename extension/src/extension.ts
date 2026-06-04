@@ -66,6 +66,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
 
     await pushSettings();
+    await reconnectMcpServers();
 
     // Phase 3: register the @foundry chat participant.
     try {
@@ -89,6 +90,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.workspace.onDidChangeConfiguration((e) => {
             if (e.affectsConfiguration(CFG_NS)) {
                 void pushSettings();
+            }
+            if (e.affectsConfiguration(CFG_NS + '.mcp.servers')) {
+                void reconnectMcpServers();
             }
         }),
         vscode.commands.registerCommand('foundryCopilot.ping', async () => {
@@ -125,6 +129,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }
                 },
             );
+        }),
+        vscode.commands.registerCommand('foundryCopilot.reconnectMcp', async () => {
+            await reconnectMcpServers();
         }),
     );
 }
@@ -185,4 +192,42 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
             },
         );
     });
+}
+
+interface McpServerSetting {
+    id: string;
+    command: string;
+    args?: string[];
+    env?: Record<string, string>;
+}
+
+async function reconnectMcpServers(): Promise<void> {
+    if (!rpc) return;
+    const cfg = vscode.workspace.getConfiguration(CFG_NS);
+    const servers = cfg.get<McpServerSetting[]>('mcp.servers', []);
+    // Disconnect any previously connected servers not in the new list.
+    try {
+        const live = await Methods.mcpList(rpc);
+        const wanted = new Set(servers.map((s) => s.id));
+        for (const id of live.servers) {
+            if (!wanted.has(id)) {
+                try { await Methods.mcpDisconnect(rpc, { id }); }
+                catch { /* ignore */ }
+            }
+        }
+    } catch { /* sidecar may not be ready yet */ }
+    // Connect (or reconnect) everything in the desired list.
+    for (const spec of servers) {
+        if (!spec || !spec.id || !spec.command) continue;
+        try {
+            const r = await Methods.mcpConnect(rpc, {
+                id: spec.id, command: spec.command,
+                args: spec.args ?? [], env: spec.env ?? {},
+            });
+            if (output) output.appendLine(`[ext] mcp connect ${r.id}: ${r.tools} tools`);
+        } catch (err: unknown) {
+            const m = err instanceof Error ? err.message : String(err);
+            if (output) output.appendLine(`[ext] mcp connect ${spec.id} failed: ${m}`);
+        }
+    }
 }

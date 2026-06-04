@@ -49,6 +49,11 @@
         "command": "foundryCopilot.refreshIndex",
         "title": "Foundry Copilot: Refresh Workspace Index",
         "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.reconnectMcp",
+        "title": "Foundry Copilot: Reconnect MCP Servers",
+        "category": "Foundry Copilot"
       }
     ],
     "configuration": {
@@ -98,6 +103,21 @@
           "enum": ["debug", "info", "warn", "error"],
           "default": "info",
           "description": "Sidecar log level."
+        },
+        "foundryCopilot.mcp.servers": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "MCP (Model Context Protocol) servers to launch on activation. Each entry is `{ id, command, args?, env? }`. Tools exposed by these servers become available to the agent loop as `mcp__{id}__{tool}`.",
+          "items": {
+            "type": "object",
+            "required": ["id", "command"],
+            "properties": {
+              "id": { "type": "string", "description": "Stable id used in tool names." },
+              "command": { "type": "string", "description": "Executable to launch (stdio MCP server)." },
+              "args": { "type": "array", "items": { "type": "string" }, "default": [] },
+              "env": { "type": "object", "additionalProperties": { "type": "string" }, "default": {} }
+            }
+          }
         }
       }
     }

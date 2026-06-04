@@ -269,4 +269,51 @@ export const Methods = {
     indexQuery(rpc: RpcClient, p: IndexQueryParams): Promise<IndexQueryReply> {
         return rpc.request<IndexQueryReply>('index/query', p);
     },
+    mcpConnect(rpc: RpcClient, p: MCPConnectParams): Promise<MCPConnectReply> {
+        return rpc.request<MCPConnectReply>('mcp/connect', p);
+    },
+    mcpDisconnect(rpc: RpcClient, p: { id: string }): Promise<{ ok: boolean }> {
+        return rpc.request<{ ok: boolean }>('mcp/disconnect', p);
+    },
+    mcpList(rpc: RpcClient): Promise<MCPListReply> {
+        return rpc.request<MCPListReply>('mcp/list');
+    },
+    mcpListTools(rpc: RpcClient, p: { id?: string } = {}): Promise<MCPListToolsReply> {
+        return rpc.request<MCPListToolsReply>('mcp/list_tools', p);
+    },
+    mcpCallTool(rpc: RpcClient, p: MCPCallToolParams): Promise<MCPCallToolReply> {
+        return rpc.request<MCPCallToolReply>('mcp/call_tool', p);
+    },
 };
+
+export interface MCPConnectParams {
+    id: string;
+    command: string;
+    args?: string[];
+    env?: Record<string, string>;
+}
+export interface MCPConnectReply {
+    id: string;
+    tools: number;
+}
+export interface MCPListReply {
+    servers: string[];
+}
+export interface MCPListToolsTool {
+    server_id: string;
+    name: string;
+    description: string;
+    input_schema: Record<string, unknown>;
+}
+export interface MCPListToolsReply {
+    tools: MCPListToolsTool[];
+}
+export interface MCPCallToolParams {
+    id: string;
+    name: string;
+    args?: Record<string, unknown>;
+}
+export interface MCPCallToolReply {
+    text: string;
+    error?: string;
+}
