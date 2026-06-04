@@ -86,7 +86,7 @@ func (s *Server) Run(ctx context.Context, in io.Reader, out io.WriteCloser) erro
 }
 
 func (s *Server) methods() handler.Map {
-	return handler.Map{
+	m := handler.Map{
 		"ping":            handler.New(s.Ping),
 		"version":         handler.New(s.Version_),
 		"config/set":      handler.New(s.ConfigSet),
@@ -103,6 +103,13 @@ func (s *Server) methods() handler.Map {
 		"mcp/list_tools":  handler.New(s.MCPListTools),
 		"mcp/call_tool":   handler.New(s.MCPCallTool),
 	}
+	// v0.2 scaffolding: register stub methods so the extension can discover
+	// the surface today. Stubs return ErrV02NotImplemented; the real
+	// handlers land in v0.2.1.
+	for k, v := range V02StubMethods() {
+		m[k] = v
+	}
+	return m
 }
 
 // ─── method types ───────────────────────────────────────────────────────────

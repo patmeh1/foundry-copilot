@@ -1,0 +1,120 @@
+id,phase,layer,type,description,expected,status
+11.01,11,ts,+,BAA guard returns conflict list when GitHub.copilot installed,Returns [GitHub.copilot],pending
+11.02,11,ts,+,BAA guard returns conflict list for GitHub.copilot-chat,Returns [GitHub.copilot-chat],pending
+11.03,11,ts,+,BAA guard returns empty list when no Copilot present,Returns [],pending
+11.04,11,ts,+,BAA auto-mode invokes disableExtension once per id,One call per conflict,pending
+11.05,11,ts,+,BAA prompt-mode emits exactly one modal,One showWarningMessage,pending
+11.06,11,ts,-,BAA off-mode does NOT call disableExtension,Zero calls,pending
+11.07,11,e2e,+,Stub install activates amber then auto-disable green,amber->green,pending
+11.08,11,e2e,+,Reactivation with stub still enabled re-disables,amber->green,pending
+11.09,11,e2e,-,Off-mode stays red,Red persists,pending
+11.10,11,go,+,Control-plane lock allows management.azure.com,nil,pending
+11.11,11,go,-,Control-plane lock rejects api.openai.com,ErrEndpointNotControlPlane,pending
+11.12,11,go,-,Control-plane lock rejects subdomain attacker,Rejected,pending
+11.13,11,go,-,Control-plane lock rejects http,Rejected,pending
+11.14,11,go,-,Control-plane lock rejects IP literal,Rejected,pending
+11.15,11,ts,+,Supervisor restart with 1s backoff,Restart at 1s,pending
+11.16,11,ts,+,Supervisor backoff sequence 1-2-4-8-16-30,Sequence matches,pending
+11.17,11,ts,+,Circuit opens after 5 failures in 60s,No restart in 60s,pending
+11.18,11,ts,+,Status bar green on healthy,Green theme,pending
+11.19,11,ts,+,Status bar yellow during restart,Warning theme,pending
+11.20,11,ts,+,Status bar red on circuit open,Error theme,pending
+11.21,11,e2e,+,Embedding auto-discovery seeds setting,Setting populated,pending
+11.22,11,e2e,-,Embedding auto-discovery does not overwrite explicit,Setting unchanged,pending
+11.23,11,e2e,+,LM provider returns model per deployment,Length matches,pending
+11.24,11,e2e,+,LM provider prompt streams to telemetry,Row +1,pending
+11.25,11,e2e,+,Foundry Agents toggle routes to services.ai.azure.com,URL matches,pending
+12.01,12,e2e,+,View container new thread streams,Webview renders,pending
+12.02,12,e2e,+,Thread persists across reload,Restored,pending
+12.03,12,e2e,+,Ask mode disables tools,Tool list empty,pending
+12.04,12,e2e,+,Edit mode emits diffs,Diff pane visible,pending
+12.05,12,e2e,+,Agent mode shows tool cards,Cards render,pending
+12.06,12,e2e,+,@foundry in @ menu,Item present,pending
+12.07,12,e2e,+,/explain in / menu,Item present,pending
+12.08,12,e2e,+,#file resolved in payload,Content present,pending
+12.09,12,e2e,+,Drag-drop attachment chip,Chip + payload,pending
+12.10,12,e2e,+,Apply in editor WorkspaceEdit,Doc updated,pending
+12.11,12,e2e,+,Multi-file Keep per file,One file modified,pending
+12.12,12,e2e,+,Multi-file Discard all,No files modified,pending
+12.13,12,e2e,+,Cmd+I opens inline popover,Popover visible,pending
+12.14,12,e2e,+,Inline accept inserts and undoes,Undo restores,pending
+12.15,12,e2e,+,Ctrl+Shift+I opens quick chat,Floating window,pending
+12.16,12,e2e,+,Quick chat close no persistence,Thread list unchanged,pending
+12.17,12,e2e,+,Terminal Cmd+I proposes and runs,Command executed,pending
+12.18,12,e2e,+,Notebook cell Fix this cell diff,Diff visible,pending
+12.19,12,go,+,chat/edit_propose returns structured edits,Files array,pending
+12.20,12,go,+,chat/variables_list returns 8 names,Length 8,pending
+12.21,12,go,+,chat/variables_resolve returns content,Resolved string,pending
+13.01,13,go,+,propose_edits emits structured records,Schema match,pending
+13.02,13,e2e,+,Edit mode propose_edits diff preview,All files visible,pending
+13.03,13,go,+,NES predictor returns suggestion,Non-empty,pending
+13.04,13,e2e,+,NES off by default,No suggestion,pending
+13.05,13,e2e,+,NES opt-in suggestion <800ms,Visible,pending
+13.06,13,e2e,+,Foundry: Explain in context menu,Item present,pending
+13.07,13,e2e,+,SCM Generate fills commit input,Input populated,pending
+13.08,13,e2e,+,Commit message matches Conventional Commits,Regex matches,pending
+13.09,13,e2e,+,PR description Generate fills field,Field non-empty,pending
+13.10,13,e2e,+,Test Explorer diagnose opens chat,Thread visible,pending
+13.11,13,e2e,+,.foundry/instructions prepended,First sys msg,pending
+13.12,13,e2e,+,Copilot instructions one-time migration prompt,Prompt shown once,pending
+13.13,13,e2e,-,Migration prompt dismissed never fires again,Suppressed,pending
+13.14,13,go,+,#file provider returns content,Bytes match,pending
+13.15,13,go,+,#codebase calls RAG search,RAG hits > 0,pending
+13.16,13,e2e,+,Foundry: Fix diagnostic code action,Action present,pending
+13.17,13,e2e,-,Image attach disabled for non-vision,Disabled + tooltip,pending
+13.18,13,e2e,+,Image attach enabled for vision,Enabled,pending
+13.19,13,e2e,+,/refactor from .foundry/prompts,Item in / picker,pending
+14.01,14,go,+,deploy/list returns deployment shape,Shape matches,pending
+14.02,14,go,-,deploy/list errors without endpoint,Error,pending
+14.03,14,go-int,+,deploy/create then get,Get OK,pending
+14.04,14,go-int,+,deploy/delete removes,Get 404,pending
+14.05,14,go-int,+,deploy/test returns ok,ok:true,pending
+14.06,14,e2e,+,Tree view lists deployments,Tree populated,pending
+14.07,14,e2e,+,createDeployment runs quick-pick flow,Tree refreshed,pending
+14.08,14,e2e,+,Open in Azure Portal,URL match,pending
+15.01,15,go,+,Telemetry SQLite file created,File exists,pending
+15.02,15,go,+,Single chat appends one row,Row +1,pending
+15.03,15,go,+,telemetry/summary returns aggregates,Non-empty,pending
+15.04,15,go,+,telemetry/timeseries hourly buckets,24 elements,pending
+15.05,15,go,-,OTLP no-op when allowed empty,Zero requests,pending
+15.06,15,go,-,OTLP rejects host not in allow-list,Error,pending
+15.07,15,e2e,+,Insights renders 4 charts,4 chart elements,pending
+15.08,15,e2e,+,Status bar shows token total,Numeric,pending
+15.09,15,e2e,+,CSV export header row,Schema match,pending
+16.01,16,go,+,dataset/from_sessions valid JSONL,Validator OK,pending
+16.02,16,go,+,dataset/upload multipart,Mock sees file,pending
+16.03,16,go,+,finetune/create_job posts JSON,Mock receives model+file,pending
+16.04,16,go,+,finetune/get_job parsed status,Status field,pending
+16.05,16,go,+,finetune/cancel_job posts to cancel,Mock sees cancel,pending
+16.06,16,e2e,+,Fine-tuning webview lists,Both lists rendered,pending
+16.07,16,e2e,+,Register fine-tuned deployment,Dialog opens,pending
+17.01,17,go,+,policy.yaml parsed,Struct populated,pending
+17.02,17,go,-,chat/start disallowed deployment violation,policy_violation,pending
+17.03,17,go,-,agent/run disallowed tool violation,policy_violation,pending
+17.04,17,go,+,.foundry/tools adds to registry,Registry +N,pending
+17.05,17,go,+,rag/attach_remote verifies signature,Pass with valid sig,pending
+17.06,17,go,-,rag/attach_remote rejects tampered,Signature error,pending
+17.07,17,go,-,rag/attach_remote rejects unsigned,Error,pending
+17.08,17,e2e,+,/refactor slash,(also 13.19),pending
+18.01,18,go,+,Quota header parser extracts remaining,Int value,pending
+18.02,18,go,-,Quota parser tolerates missing,Zero no panic,pending
+18.03,18,go-int,+,billing/summary 7 days non-empty,Rows > 0,pending
+18.04,18,go,+,Budget alert once per day,One notification,pending
+18.05,18,go,-,Budget alert not double-fire,Idempotent,pending
+18.06,18,e2e,+,Billing tab renders chart,Chart visible,pending
+19.01,19,manual,+,Tag v0.2.0-rc.1 → 5 VSIXes,5 assets,pending
+19.02,19,manual,+,darwin-arm64 smoke chat,Response,pending
+19.03,19,manual,+,linux-x64 smoke completion,Completion,pending
+19.04,19,manual,+,win32-x64 smoke BAA disable,Green,pending
+S.01,S,go,-,Data-plane allows api.openai.com,Rejected,pending
+S.02,S,go,-,Data-plane allows openai.azure.com.evil.com,Rejected,pending
+S.03,S,go,-,Data-plane allows localhost,Rejected,pending
+S.04,S,go,-,Data-plane allows IP literal,Rejected,pending
+S.05,S,go,-,Data-plane allows http,Rejected,pending
+S.06,S,go,-,Control-plane allows api.openai.com,Rejected,pending
+S.07,S,go,-,Control-plane allows attacker subdomain,Rejected,pending
+S.08,S,go,-,No OPENAI_API_KEY env reader present,grep zero,pending
+S.09,S,ts,-,BAA off + Copilot installed never green,Red persists,pending
+S.10,S,go,-,Telemetry export to disallowed host,Error,pending
+S.11,S,ts,-,Endpoint setting matches openai.com rejected,UI fails,pending
+S.12,S,go,-,Issuer verify rejects non-MS STS,ErrUntrustedIssuer,pending

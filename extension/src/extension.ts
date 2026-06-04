@@ -1,22 +1,53 @@
-// Activation entry point. Spawns the sidecar, attaches an RPC client,
-// pushes VS Code settings into the sidecar, and exposes diagnostic
-// commands. Phase 3 will register the chat participant here.
+// Activation entry point. Activation order (v0.2):
+//   1. BAA guard FIRST (must run before any sidecar/network so conflicting
+//      GitHub Copilot extensions are disabled before they can intercept LM
+//      API calls).
+//   2. Sidecar spawn + RPC attach.
+//   3. LanguageModelChatProvider registration (if proposed API present).
+//   4. Foundry chat view + threads + diff surface.
+//   5. Deployments / telemetry / finetune / billing tree views.
+//   6. Inline / quick / terminal / notebook chat commands.
+//   7. SCM (commit msg, PR desc), tests diagnose, instructions migration.
+//   8. NES inline-completion provider (gated).
+//   9. Team config watcher (.foundry/**).
 import * as vscode from 'vscode';
 import { registerChatParticipant } from './chat/participant';
 import { registerInlineCompletionProvider } from './completions/provider';
 import { Methods, RpcClient, SidecarConfig } from './sidecar/rpc';
 import { Sidecar, platformId } from './sidecar/process';
+import { BaaStatusController } from './baa/status';
+import { registerLmProvider } from './lm/provider';
+import { registerChatView } from './views/chat/container';
+import { registerDeploymentsView } from './views/deployments';
+import { registerTelemetryView } from './views/telemetry';
+import { registerFinetuneView } from './views/finetune';
+import { registerBillingView } from './views/billing';
+import { registerInlineChat } from './inline/inline-chat';
+import { registerQuickChat } from './inline/quick-chat';
+import { registerTerminalChat } from './inline/terminal-chat';
+import { registerNotebookChat } from './notebook/notebook-chat';
+import { registerCommitMessage } from './scm/commit-message';
+import { registerPrDescription } from './scm/pr-description';
+import { registerTestsDiagnose } from './tests/diagnose';
+import { registerNesProvider } from './nes/provider';
+import { maybePromptCopilotMigration } from './instructions/loader';
+import { registerTeamWatcher } from './team/loader';
 
 const CFG_NS = 'foundryCopilot';
 
 let sidecar: Sidecar | undefined;
 let rpc: RpcClient | undefined;
 let output: vscode.OutputChannel | undefined;
+let baa: BaaStatusController | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     output = vscode.window.createOutputChannel('Foundry Copilot');
     output.appendLine(`[ext] activating on ${platformId()}`);
     context.subscriptions.push(output);
+
+    // 1. BAA guard MUST run before anything else.
+    baa = new BaaStatusController(output);
+    await baa.start(context);
 
     const logLevel = readLogLevel();
     sidecar = new Sidecar({
@@ -84,6 +115,72 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     } catch (err: unknown) {
         const m = err instanceof Error ? err.message : String(err);
         output.appendLine(`[ext] inline completion registration failed: ${m}`);
+    }
+
+    // v0.2 Phase 11: LanguageModelChatProvider (proposed API; gated).
+    try {
+        registerLmProvider(context, rpc, output);
+    } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[ext] LM provider registration failed: ${m}`);
+    }
+
+    // v0.2 Phase 12: Foundry chat view (BAA-safe replacement for Copilot Chat).
+    try {
+        registerChatView(context, rpc, output);
+        output.appendLine('[ext] Foundry chat view registered');
+    } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[ext] chat view registration failed: ${m}`);
+    }
+
+    // v0.2 Phases 14-18: tree views (deployments / telemetry / finetune / billing).
+    try {
+        registerDeploymentsView(context, rpc);
+        registerTelemetryView(context, rpc);
+        registerFinetuneView(context, rpc);
+        registerBillingView(context, rpc);
+    } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[ext] view registration failed: ${m}`);
+    }
+
+    // v0.2 Phase 12: inline / quick / terminal / notebook chat commands.
+    try {
+        registerInlineChat(context, rpc, output);
+        registerQuickChat(context, rpc, output);
+        registerTerminalChat(context, rpc, output);
+        registerNotebookChat(context, rpc, output);
+    } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[ext] inline/notebook command registration failed: ${m}`);
+    }
+
+    // v0.2 Phase 13: SCM, tests diagnose, NES.
+    try {
+        registerCommitMessage(context, rpc, output);
+        registerPrDescription(context, rpc, output);
+        registerTestsDiagnose(context, rpc, output);
+        registerNesProvider(context, rpc, output);
+    } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[ext] scm/tests/nes registration failed: ${m}`);
+    }
+
+    // v0.2 Phase 13/16: workspace instructions migration + team config watcher.
+    const wsFolder = vscode.workspace.workspaceFolders?.[0];
+    const outChan = output;
+    if (wsFolder) {
+        try {
+            await maybePromptCopilotMigration(context, wsFolder.uri.fsPath, outChan);
+        } catch (err: unknown) {
+            const m = err instanceof Error ? err.message : String(err);
+            outChan.appendLine(`[ext] instructions migration check failed: ${m}`);
+        }
+        registerTeamWatcher(context, outChan, () => {
+            outChan.appendLine('[ext] team config changed; reloading sidecar settings');
+            void pushSettings();
+        });
     }
 
     context.subscriptions.push(

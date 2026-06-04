@@ -2,7 +2,7 @@
   "name": "foundry-copilot",
   "displayName": "Foundry Copilot",
   "description": "GitHub Copilot–style coding assistant locked to Microsoft Foundry models.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "patmeh1",
   "license": "MIT",
   "repository": {
@@ -54,6 +54,133 @@
         "command": "foundryCopilot.reconnectMcp",
         "title": "Foundry Copilot: Reconnect MCP Servers",
         "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.baa.recheck",
+        "title": "Foundry Copilot: BAA — Re-check Conflicts",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.baa.disableConflicts",
+        "title": "Foundry Copilot: BAA — Disable Conflicting Extensions Now",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.baa.showWalkthrough",
+        "title": "Foundry Copilot: BAA — Open Walkthrough",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.inlineChat",
+        "title": "Foundry Copilot: Inline Chat",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.quickChat",
+        "title": "Foundry Copilot: Quick Chat",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.terminalChat",
+        "title": "Foundry Copilot: Terminal Chat",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.notebook.askCell",
+        "title": "Foundry Copilot: Notebook — Ask About Cell",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.notebook.fixCell",
+        "title": "Foundry Copilot: Notebook — Fix Cell",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.notebook.testsCell",
+        "title": "Foundry Copilot: Notebook — Generate Tests",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.scm.generateCommitMessage",
+        "title": "Foundry Copilot: Generate Commit Message",
+        "category": "Foundry Copilot",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "foundryCopilot.scm.generatePrDescription",
+        "title": "Foundry Copilot: Generate PR Description",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.tests.diagnoseFailure",
+        "title": "Foundry Copilot: Diagnose Test Failure",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.deployments.open",
+        "title": "Foundry Copilot: Open Deployments View",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.telemetry.open",
+        "title": "Foundry Copilot: Open Telemetry View",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.finetune.open",
+        "title": "Foundry Copilot: Open Fine-tuning View",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.billing.open",
+        "title": "Foundry Copilot: Open Billing View",
+        "category": "Foundry Copilot"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "foundryCopilot",
+          "title": "Foundry Copilot",
+          "icon": "$(shield)"
+        }
+      ]
+    },
+    "views": {
+      "foundryCopilot": [
+        {
+          "type": "webview",
+          "id": "foundryCopilot.chatView",
+          "name": "Chat"
+        },
+        {
+          "id": "foundryCopilot.deployments",
+          "name": "Deployments"
+        }
+      ]
+    },
+    "menus": {
+      "scm/title": [
+        {
+          "command": "foundryCopilot.scm.generateCommitMessage",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        }
+      ]
+    },
+    "walkthroughs": [
+      {
+        "id": "foundryCopilot.baa",
+        "title": "Foundry BAA Boundary",
+        "description": "Why Foundry Copilot disables GitHub Copilot extensions on activation, and how to configure the policy.",
+        "steps": [
+          {
+            "id": "intro",
+            "title": "Why a BAA matters",
+            "description": "GitHub Copilot ships without a Business Associate Agreement. Foundry runs in your Azure tenant under the standard Microsoft EA BAA. Foundry Copilot enforces this boundary at activation.",
+            "media": { "markdown": "walkthroughs/baa.md" }
+          }
+        ]
       }
     ],
     "configuration": {
@@ -118,6 +245,55 @@
               "env": { "type": "object", "additionalProperties": { "type": "string" }, "default": {} }
             }
           }
+        },
+        "foundryCopilot.baa.enforcement": {
+          "type": "string",
+          "enum": ["auto", "prompt", "off"],
+          "default": "auto",
+          "markdownDescription": "How to handle conflicting GitHub Copilot extensions. **`auto`**: silently disable on activation. **`prompt`**: ask once with a modal. **`off`**: do nothing (UNPROTECTED — status bar turns red)."
+        },
+        "foundryCopilot.baa.conflictingExtensions": {
+          "type": "array",
+          "default": [],
+          "items": { "type": "string" },
+          "markdownDescription": "Additional extension IDs to treat as conflicts on top of the built-in list (`GitHub.copilot`, `GitHub.copilot-chat`, `GitHub.copilot-workspace`, `GitHub.copilot-labs`)."
+        },
+        "foundryCopilot.baa.target": {
+          "type": "string",
+          "enum": ["workspace", "global"],
+          "default": "workspace",
+          "description": "Scope at which to disable conflicting extensions."
+        },
+        "foundryCopilot.lmProvider.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Register a `vscode.lm.registerChatModelProvider` so Foundry deployments appear in the standard Select Model picker (requires VS Code build with the proposed API)."
+        },
+        "foundryCopilot.nes.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Enable Next Edit Suggestions (inline completions powered by the NES predictor). Adds latency; opt-in."
+        },
+        "foundryCopilot.telemetry.localStore": {
+          "type": "boolean",
+          "default": true,
+          "description": "Append every Foundry call to a local JSONL telemetry store under your config dir. Local-only; never sent off-machine unless you also configure the OTLP exporter."
+        },
+        "foundryCopilot.telemetry.otlpEndpoint": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "OTLP HTTP endpoint for outbound telemetry export. **Required AND** `foundryCopilot.telemetry.otlpAllowedHosts` must list the endpoint host or the export is refused."
+        },
+        "foundryCopilot.telemetry.otlpAllowedHosts": {
+          "type": "array",
+          "default": [],
+          "items": { "type": "string" },
+          "markdownDescription": "Allow-list of OTLP destination hosts. The endpoint host must match (dot-anchored) one of these or the exporter refuses to send."
+        },
+        "foundryCopilot.billing.dailyBudgetUsd": {
+          "type": "number",
+          "default": 0,
+          "description": "Daily budget in USD. When tracked Foundry spend crosses this, a one-time alert fires (at most once per UTC day). 0 disables alerting."
         }
       }
     }

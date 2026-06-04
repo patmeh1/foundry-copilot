@@ -153,9 +153,9 @@ func cosine(a, b []float32, normA float32) float32 {
 
 // ChunkOptions controls the line-window chunker.
 type ChunkOptions struct {
-	WindowLines int // default 60
+	WindowLines  int // default 60
 	OverlapLines int // default 10
-	MaxBytes int // default 16 KiB per chunk
+	MaxBytes     int // default 16 KiB per chunk
 }
 
 // ChunkFile splits a file into chunks. Returns one chunk per window.
