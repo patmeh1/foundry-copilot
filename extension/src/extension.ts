@@ -1,11 +1,138 @@
-// Phase 2 will replace this stub with the real activation logic
-// (sidecar spawn, JSON-RPC client, chat participant registration).
+// Activation entry point. Spawns the sidecar, attaches an RPC client,
+// pushes VS Code settings into the sidecar, and exposes diagnostic
+// commands. Phase 3 will register the chat participant here.
 import * as vscode from 'vscode';
+import { Methods, RpcClient, SidecarConfig } from './sidecar/rpc';
+import { Sidecar, platformId } from './sidecar/process';
 
-export function activate(_context: vscode.ExtensionContext): void {
-    // Phase 2 wires the sidecar process + RPC client here.
+const CFG_NS = 'foundryCopilot';
+
+let sidecar: Sidecar | undefined;
+let rpc: RpcClient | undefined;
+let output: vscode.OutputChannel | undefined;
+
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    output = vscode.window.createOutputChannel('Foundry Copilot');
+    output.appendLine(`[ext] activating on ${platformId()}`);
+    context.subscriptions.push(output);
+
+    const logLevel = readLogLevel();
+    sidecar = new Sidecar({
+        extensionPath: context.extensionPath,
+        logLevel,
+        output,
+    });
+    rpc = new RpcClient(output);
+
+    try {
+        sidecar.start();
+    } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`Foundry Copilot: ${m}`);
+        return;
+    }
+    rpc.attach(sidecar.stdin, sidecar.stdout);
+
+    context.subscriptions.push(
+        sidecar.onExit(() => {
+            if (rpc) rpc.detach();
+            // Sidecar.start() handles restart; re-attach on next spawn via the
+            // 'spawn' event isn't wired — keep it simple: restart goes through
+            // setTimeout in Sidecar, so we hook the next stdin via a poll-ish
+            // re-attach below.
+            const retry = setInterval(() => {
+                try {
+                    rpc!.attach(sidecar!.stdin, sidecar!.stdout);
+                    clearInterval(retry);
+                    void pushSettings();
+                } catch {
+                    /* not ready yet */
+                }
+            }, 250);
+            // Stop trying after 30s.
+            setTimeout(() => clearInterval(retry), 30_000);
+        }),
+    );
+
+    // Ping to confirm liveness; non-fatal if it times out.
+    try {
+        const reply = await withTimeout(Methods.ping(rpc), 5_000);
+        output.appendLine(`[ext] sidecar ping ok, version=${reply.version}`);
+    } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[ext] sidecar ping failed: ${m}`);
+    }
+
+    await pushSettings();
+
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration(CFG_NS)) {
+                void pushSettings();
+            }
+        }),
+        vscode.commands.registerCommand('foundryCopilot.ping', async () => {
+            try {
+                const r = await Methods.ping(rpc!);
+                vscode.window.showInformationMessage(`Foundry Copilot sidecar OK, v${r.version}`);
+            } catch (err: unknown) {
+                const m = err instanceof Error ? err.message : String(err);
+                vscode.window.showErrorMessage(`Sidecar ping failed: ${m}`);
+            }
+        }),
+        vscode.commands.registerCommand('foundryCopilot.showOutput', () => output!.show()),
+    );
 }
 
 export function deactivate(): void {
-    // Phase 2 shuts down the sidecar here.
+    if (rpc) rpc.detach();
+    if (sidecar) sidecar.stop();
+}
+
+// ─── helpers ───────────────────────────────────────────────────────────────
+
+function readLogLevel(): 'debug' | 'info' | 'warn' | 'error' {
+    const v = vscode.workspace.getConfiguration(CFG_NS).get<string>('logLevel', 'info');
+    if (v === 'debug' || v === 'info' || v === 'warn' || v === 'error') return v;
+    return 'info';
+}
+
+async function pushSettings(): Promise<void> {
+    if (!rpc) return;
+    const cfg = vscode.workspace.getConfiguration(CFG_NS);
+    const payload: SidecarConfig = {
+        endpoint: cfg.get<string>('endpoint', ''),
+        chat_deployment: cfg.get<string>('chatDeployment', ''),
+        completion_deployment: cfg.get<string>('completionDeployment', ''),
+        embedding_deployment: cfg.get<string>('embeddingDeployment', ''),
+        log_level: cfg.get<string>('logLevel', 'info'),
+    };
+    try {
+        await Methods.configSet(rpc, payload);
+        if (output) output.appendLine(`[ext] pushed settings (endpoint=${payload.endpoint ? 'set' : 'empty'})`);
+    } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : String(err);
+        if (output) output.appendLine(`[ext] config/set rejected: ${m}`);
+        if (payload.endpoint && /hard lock|not a Microsoft Foundry/i.test(m)) {
+            vscode.window.showErrorMessage(
+                `Foundry Copilot rejected endpoint "${payload.endpoint}": ${m}`,
+            );
+        }
+    }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms);
+        p.then(
+            (v) => {
+                clearTimeout(t);
+                resolve(v);
+            },
+            (err) => {
+                clearTimeout(t);
+                reject(err);
+            },
+        );
+    });
 }

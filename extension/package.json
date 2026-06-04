@@ -18,6 +18,18 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "commands": [
+      {
+        "command": "foundryCopilot.ping",
+        "title": "Foundry Copilot: Ping Sidecar",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.showOutput",
+        "title": "Foundry Copilot: Show Output Channel",
+        "category": "Foundry Copilot"
+      }
+    ],
     "configuration": {
       "title": "Foundry Copilot",
       "properties": {
