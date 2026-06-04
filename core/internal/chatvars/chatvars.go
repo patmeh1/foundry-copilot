@@ -176,11 +176,23 @@ func resolveFolder(req ResolveRequest) (ResolveResponse, error) {
 
 // safeJoin rejects absolute paths and any path with ".." segments before
 // joining to root. The final path must remain within root.
+//
+// The absolute-path check is intentionally stricter than `filepath.IsAbs` so
+// that the guard behaves identically on every host OS. `filepath.IsAbs` on
+// Windows returns false for Unix-style rooted paths like "/etc/passwd" —
+// without the explicit prefix check, such a path would silently be joined
+// under the workspace root and could be resolved if the workspace happened
+// to contain a matching tree. We therefore also reject:
+//   - leading "/" or "\" (rooted on any platform)
+//   - Windows drive-letter prefixes like "C:foo" or "C:/foo"
 func safeJoin(root, rel string) (string, error) {
 	if root == "" {
 		return "", fmt.Errorf("chatvars: workspace_root not set")
 	}
-	if filepath.IsAbs(rel) {
+	if filepath.IsAbs(rel) ||
+		strings.HasPrefix(rel, "/") ||
+		strings.HasPrefix(rel, `\`) ||
+		(len(rel) >= 2 && rel[1] == ':') {
 		return "", fmt.Errorf("%w: %q is absolute", ErrPathEscape, rel)
 	}
 	clean := filepath.Clean(rel)

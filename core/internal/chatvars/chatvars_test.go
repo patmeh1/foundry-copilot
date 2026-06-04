@@ -54,9 +54,23 @@ func TestResolve_File_RejectsPathEscape(t *testing.T) {
 }
 
 func TestResolve_File_RejectsAbsolutePath(t *testing.T) {
-	_, err := Resolve(context.Background(), ResolveRequest{Name: "#file", Arg: "/etc/passwd", WorkspaceRoot: "/tmp"}, nil)
-	if err == nil || !errors.Is(err, ErrPathEscape) {
-		t.Fatalf("expected ErrPathEscape, got %v", err)
+	// All four shapes must be rejected on every host OS. Without the
+	// explicit prefix checks in safeJoin, "/etc/passwd" silently joins
+	// under the workspace root on Windows because filepath.IsAbs is false
+	// there for Unix-style rooted paths.
+	cases := []string{
+		"/etc/passwd",       // unix-rooted
+		`\Windows\System32`, // windows-rooted (no drive)
+		`C:\Windows`,        // windows absolute with drive
+		`C:foo`,             // windows drive-relative
+	}
+	for _, arg := range cases {
+		t.Run(arg, func(t *testing.T) {
+			_, err := Resolve(context.Background(), ResolveRequest{Name: "#file", Arg: arg, WorkspaceRoot: t.TempDir()}, nil)
+			if err == nil || !errors.Is(err, ErrPathEscape) {
+				t.Fatalf("expected ErrPathEscape for %q, got %v", arg, err)
+			}
+		})
 	}
 }
 
