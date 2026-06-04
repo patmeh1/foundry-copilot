@@ -1,9 +1,12 @@
 // nes/provider.ts — Next Edit Suggestions inline-completion provider.
-// Gated on foundryCopilot.nes.enabled (default false) because the predictor
-// requires extra latency and a workspace warmup step. v0.2 scaffold returns
-// no completions; v0.2.1 wires nes/predict against the sidecar.
+// Gated on foundryCopilot.nes.enabled (default false). The provider calls
+// nes/predict on the sidecar with the cursor context; if the sidecar
+// returns a non-empty suggestion text it is rendered as an inline ghost
+// completion at the current position.
 import * as vscode from 'vscode';
-import { RpcClient } from '../sidecar/rpc';
+import { Methods, RpcClient } from '../sidecar/rpc';
+
+const MAX_CONTEXT = 4096;
 
 export function registerNesProvider(
     context: vscode.ExtensionContext,
@@ -16,14 +19,38 @@ export function registerNesProvider(
         return;
     }
     const provider: vscode.InlineCompletionItemProvider = {
-        async provideInlineCompletionItems(_doc, _pos, _ctx, _tok) {
-            // v0.2 scaffold: no predictions yet.
-            void rpc;
-            return { items: [] };
+        async provideInlineCompletionItems(doc, pos, _ctx, tok) {
+            try {
+                const offset = doc.offsetAt(pos);
+                const text = doc.getText();
+                const before = text.slice(Math.max(0, offset - MAX_CONTEXT), offset);
+                const after = text.slice(offset, Math.min(text.length, offset + MAX_CONTEXT));
+                if (tok.isCancellationRequested) return { items: [] };
+                const reply = await Methods.nesPredict(rpc, {
+                    file: doc.uri.fsPath,
+                    line: pos.line,
+                    column: pos.character,
+                    before, after,
+                });
+                if (tok.isCancellationRequested) return { items: [] };
+                const sug = reply.suggestion;
+                if (!sug?.text) return { items: [] };
+                return {
+                    items: [
+                        new vscode.InlineCompletionItem(
+                            sug.text,
+                            new vscode.Range(pos, pos),
+                        ),
+                    ],
+                };
+            } catch (err) {
+                output.appendLine(`[nes] predict failed: ${(err as Error).message}`);
+                return { items: [] };
+            }
         },
     };
     context.subscriptions.push(
         vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, provider),
     );
-    output.appendLine('[nes] provider registered (scaffold)');
+    output.appendLine('[nes] provider registered');
 }

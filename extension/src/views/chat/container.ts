@@ -1,23 +1,36 @@
 // container.ts — the Foundry-native chat view that replaces the GitHub
-// Copilot Chat side-panel. v0.2.0 scaffold: registers the WebviewViewProvider,
-// boots a simple HTML compose surface, and rounds-trips messages through the
-// jsonrpc client. v0.2.1 wires real streaming chunks + tool-call rendering.
+// Copilot Chat side-panel. v0.2.0 ships the real streaming surface: each
+// user message is sent through chat/start with a unique stream_id, and
+// incoming chat/chunk notifications are appended to the live assistant
+// message until finish_reason fires. No GitHub Copilot Chat dependency.
 import * as vscode from 'vscode';
-import { RpcClient } from '../../sidecar/rpc';
+import { ChatMessage, Methods, RpcClient } from '../../sidecar/rpc';
 import { ChatThread, ThreadStore } from './threads';
 
 const VIEW_ID = 'foundryCopilot.chatView';
 
+interface ChunkPayload {
+    stream_id: string;
+    delta?: string;
+    finish_reason?: string;
+    error?: string;
+}
+
 export class FoundryChatViewProvider implements vscode.WebviewViewProvider {
     private view: vscode.WebviewView | undefined;
     private currentThreadId: string | undefined;
+    private activeStreams = new Map<string, { threadId: string; buffer: string }>();
+    private chunkSub: vscode.Disposable | undefined;
 
     constructor(
         private readonly context: vscode.ExtensionContext,
         private readonly rpc: RpcClient,
         private readonly output: vscode.OutputChannel,
         private readonly threads: ThreadStore,
-    ) {}
+    ) {
+        this.chunkSub = this.rpc.onNotification('chat/chunk', (params) => this.onChunk(params as ChunkPayload));
+        this.context.subscriptions.push(this.chunkSub);
+    }
 
     resolveWebviewView(webviewView: vscode.WebviewView): void {
         this.view = webviewView;
@@ -43,23 +56,76 @@ export class FoundryChatViewProvider implements vscode.WebviewViewProvider {
             case 'send': {
                 const text = String(msg.payload?.text ?? '').trim();
                 if (!text) return;
-                if (!this.currentThreadId) {
-                    const t = this.threads.create('New chat');
-                    this.currentThreadId = t.id;
-                }
-                const thread = this.threads.get(this.currentThreadId!);
-                if (!thread) return;
-                thread.messages.push({ role: 'user', content: text });
-                // v0.2 scaffold: single canned chunk. v0.2.1 wires real streaming.
-                const reply = `[Foundry chat — v0.2 scaffold] Sidecar wiring lands in v0.2.1. Your prompt was ${text.length} chars.`;
-                thread.messages.push({ role: 'assistant', content: reply });
-                this.threads.update(thread);
-                this.view?.webview.postMessage({ type: 'assistant', payload: { threadId: thread.id, text: reply } });
-                void this.rpc; // referenced to keep TS happy until v0.2.1 wires it
+                await this.sendUserMessage(text);
                 break;
             }
             default:
                 this.output.appendLine(`[chat-view] unknown message: ${msg.type}`);
+        }
+    }
+
+    private async sendUserMessage(text: string): Promise<void> {
+        if (!this.currentThreadId) {
+            const t = this.threads.create('New chat');
+            this.currentThreadId = t.id;
+        }
+        const thread = this.threads.get(this.currentThreadId!);
+        if (!thread) return;
+        thread.messages.push({ role: 'user', content: text });
+        this.threads.update(thread);
+        // Show the user msg + a placeholder assistant entry.
+        const streamId = `${thread.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        thread.messages.push({ role: 'assistant', content: '' });
+        this.threads.update(thread);
+        this.activeStreams.set(streamId, { threadId: thread.id, buffer: '' });
+        this.view?.webview.postMessage({ type: 'threads', payload: { threads: this.threads.list(), currentId: this.currentThreadId } });
+
+        const messages: ChatMessage[] = thread.messages
+            .slice(0, -1) // drop the empty assistant placeholder
+            .map((m) => ({ role: m.role as ChatMessage['role'], content: m.content }));
+        try {
+            await Methods.chatStart(this.rpc, { stream_id: streamId, messages });
+        } catch (err) {
+            const msg = (err as Error).message;
+            this.output.appendLine(`[chat-view] chat/start failed: ${msg}`);
+            const live = this.activeStreams.get(streamId);
+            if (live) {
+                const t = this.threads.get(live.threadId);
+                if (t && t.messages.length > 0) {
+                    t.messages[t.messages.length - 1].content = `(error) ${msg}`;
+                    this.threads.update(t);
+                    this.view?.webview.postMessage({ type: 'threads', payload: { threads: this.threads.list(), currentId: this.currentThreadId } });
+                }
+                this.activeStreams.delete(streamId);
+            }
+        }
+    }
+
+    private onChunk(c: ChunkPayload): void {
+        if (!c?.stream_id) return;
+        const live = this.activeStreams.get(c.stream_id);
+        if (!live) return;
+        if (c.error) {
+            const t = this.threads.get(live.threadId);
+            if (t && t.messages.length > 0) {
+                t.messages[t.messages.length - 1].content = `(error) ${c.error}`;
+                this.threads.update(t);
+            }
+            this.activeStreams.delete(c.stream_id);
+            this.view?.webview.postMessage({ type: 'threads', payload: { threads: this.threads.list(), currentId: this.currentThreadId } });
+            return;
+        }
+        if (c.delta) {
+            live.buffer += c.delta;
+            const t = this.threads.get(live.threadId);
+            if (t && t.messages.length > 0) {
+                t.messages[t.messages.length - 1].content = live.buffer;
+                this.threads.update(t);
+                this.view?.webview.postMessage({ type: 'stream', payload: { threadId: live.threadId, text: live.buffer } });
+            }
+        }
+        if (c.finish_reason) {
+            this.activeStreams.delete(c.stream_id);
         }
     }
 
@@ -150,6 +216,13 @@ input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey)
 window.addEventListener('message', (e) => {
   const m = e.data;
   if (m.type === 'threads') { threads = m.payload.threads; currentId = m.payload.currentId; renderThreads(); }
+  else if (m.type === 'stream') {
+    const t = threads.find(x => x.id === m.payload.threadId);
+    if (t && t.messages.length > 0) {
+      t.messages[t.messages.length - 1].content = m.payload.text;
+      render();
+    }
+  }
   else if (m.type === 'assistant') {
     const t = threads.find(x => x.id === m.payload.threadId);
     if (t) { t.messages.push({ role: 'assistant', content: m.payload.text }); render(); }

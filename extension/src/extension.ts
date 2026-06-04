@@ -66,6 +66,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     rpc.attach(sidecar.stdin, sidecar.stdout);
 
+    // Sidecar tri-color status bar: green=running, yellow=restarting, red=disabled.
+    const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusBar.command = 'foundryCopilot.showOutput';
+    statusBar.text = '$(circle-filled) Foundry';
+    statusBar.tooltip = 'Foundry Copilot sidecar — click for output';
+    statusBar.show();
+    context.subscriptions.push(statusBar);
+    context.subscriptions.push(
+        sidecar.onStatus((status, reason) => {
+            if (status === 'disabled') {
+                statusBar.text = '$(error) Foundry';
+                statusBar.tooltip = `Foundry sidecar disabled: ${reason}`;
+                statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+            } else if (status === 'restarting') {
+                statusBar.text = '$(sync~spin) Foundry';
+                statusBar.tooltip = `Foundry sidecar restarting: ${reason}`;
+                statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+            } else {
+                statusBar.text = '$(check) Foundry';
+                statusBar.tooltip = `Foundry sidecar running (${reason || 'ok'})`;
+                statusBar.backgroundColor = undefined;
+            }
+        }),
+    );
+
     context.subscriptions.push(
         sidecar.onExit(() => {
             if (rpc) rpc.detach();

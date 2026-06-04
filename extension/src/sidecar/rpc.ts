@@ -284,7 +284,152 @@ export const Methods = {
     mcpCallTool(rpc: RpcClient, p: MCPCallToolParams): Promise<MCPCallToolReply> {
         return rpc.request<MCPCallToolReply>('mcp/call_tool', p);
     },
+    // v0.2 surface
+    chatVariablesList(rpc: RpcClient): Promise<{ variables: ChatVariable[] }> {
+        return rpc.request('chat/variables_list');
+    },
+    chatVariablesResolve(rpc: RpcClient, p: { name: string; arg?: string; workspace_root?: string }): Promise<{ name: string; value: string; bytes: number }> {
+        return rpc.request('chat/variables_resolve', p);
+    },
+    chatEditPropose(rpc: RpcClient, p: ChatEditProposeParams): Promise<ChatEditProposeReply> {
+        return rpc.request('chat/edit_propose', p);
+    },
+    nesPredict(rpc: RpcClient, p: NESPredictParams): Promise<NESPredictReply> {
+        return rpc.request('nes/predict', p);
+    },
+    telemetrySummary(rpc: RpcClient, p: { window_hours?: number } = {}): Promise<TelemetrySummary> {
+        return rpc.request('telemetry/summary', p);
+    },
+    telemetryTimeSeries(rpc: RpcClient, p: { window_hours?: number } = {}): Promise<{ buckets: TelemetryBucket[] }> {
+        return rpc.request('telemetry/timeseries', p);
+    },
+    telemetryErrors(rpc: RpcClient, p: { limit?: number } = {}): Promise<{ rows: TelemetryErrorRow[] }> {
+        return rpc.request('telemetry/errors', p);
+    },
+    telemetryClear(rpc: RpcClient): Promise<{ ok: boolean }> {
+        return rpc.request('telemetry/clear');
+    },
+    billingSummary(rpc: RpcClient, p: { window_hours?: number } = {}): Promise<BillingSummary> {
+        return rpc.request('billing/summary', p);
+    },
+    billingQuota(rpc: RpcClient): Promise<BillingQuota> {
+        return rpc.request('billing/quota');
+    },
+    billingBudgetGet(rpc: RpcClient): Promise<{ budget_usd: number }> {
+        return rpc.request('billing/budget_get');
+    },
+    billingBudgetSet(rpc: RpcClient, p: { budget_usd: number }): Promise<{ budget_usd: number }> {
+        return rpc.request('billing/budget_set', p);
+    },
+    datasetValidate(rpc: RpcClient, p: { examples: unknown[] }): Promise<{ ok: boolean; reason?: string }> {
+        return rpc.request('dataset/validate', p);
+    },
+    finetuneListJobs(rpc: RpcClient): Promise<FinetuneJob[]> {
+        return rpc.request('finetune/list_jobs');
+    },
+    deployList(rpc: RpcClient, p: { filter_capability?: string } = {}): Promise<Deployment[]> {
+        return rpc.request('deploy/list', p);
+    },
+    deployGet(rpc: RpcClient, p: { name: string }): Promise<Deployment> {
+        return rpc.request('deploy/get', p);
+    },
+    policyLoad(rpc: RpcClient): Promise<PolicyLoadReply> {
+        return rpc.request('policy/load');
+    },
 };
+
+// ─── v0.2 typed surface ───────────────────────────────────────────────────
+
+export interface ChatVariable {
+    name: string;
+    description: string;
+    args?: string;
+}
+export interface ChatEditProposeParams {
+    deployment?: string;
+    path: string;
+    language?: string;
+    original_text: string;
+    instruction: string;
+}
+export interface ChatEditProposeReply {
+    path: string;
+    new_text: string;
+    explanation: string;
+}
+export interface NESPredictParams {
+    file: string;
+    line: number;
+    column: number;
+    before: string;
+    after: string;
+    last_edit?: string;
+}
+export interface NESPredictReply {
+    suggestion: { file?: string; line?: number; column?: number; text?: string };
+}
+export interface TelemetrySummary {
+    window_hours: number;
+    calls: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    errors: number;
+    p50_latency_ms?: number;
+    p95_latency_ms?: number;
+}
+export interface TelemetryBucket {
+    ts: number;
+    calls: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    errors: number;
+}
+export interface TelemetryErrorRow {
+    ts: number;
+    method: string;
+    error: string;
+}
+export interface BillingSummary {
+    window_hours: number;
+    calls: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    estimated_usd: number;
+    note: string;
+}
+export interface BillingQuota {
+    remaining: number;
+    limit: number;
+    reset_at: number;
+}
+export interface FinetuneJob {
+    id: string;
+    model: string;
+    status: string;
+    created_at?: string;
+}
+export interface Deployment {
+    name: string;
+    model: string;
+    sku?: string;
+    capacity?: number;
+    state?: string;
+    capabilities?: string[];
+}
+export interface PolicyLoadReply {
+    policy: {
+        allowed_deployments?: string[];
+        allowed_tools?: string[];
+        max_tokens?: number;
+    };
+    overlays: Array<{
+        name: string;
+        description?: string;
+        url: string;
+        headers?: Record<string, string>;
+        jq?: string;
+    }>;
+}
 
 export interface MCPConnectParams {
     id: string;

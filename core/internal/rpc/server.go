@@ -11,16 +11,20 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/creachadair/jrpc2"
 	"github.com/creachadair/jrpc2/channel"
 	"github.com/creachadair/jrpc2/handler"
 
 	"github.com/patmeh1/foundry-copilot/core/internal/agent"
+	"github.com/patmeh1/foundry-copilot/core/internal/billing"
 	"github.com/patmeh1/foundry-copilot/core/internal/config"
 	"github.com/patmeh1/foundry-copilot/core/internal/foundry"
 	"github.com/patmeh1/foundry-copilot/core/internal/mcpx"
 	"github.com/patmeh1/foundry-copilot/core/internal/rag"
+	"github.com/patmeh1/foundry-copilot/core/internal/telemetry"
 	"github.com/patmeh1/foundry-copilot/core/internal/tools"
 )
 
@@ -35,6 +39,14 @@ type Server struct {
 
 	mcpOnce sync.Once
 	mcp     *mcpx.Manager
+
+	// V02 holds lazily-initialised v0.2 state (telemetry store, budget
+	// alerter, NES predictor). See methods_v02.go.
+	V02 V02Server
+
+	// LastQuota is the most recently observed Foundry rate-limit header set.
+	// Updated by chat/complete after each call; read by billing/quota.
+	LastQuota atomic.Pointer[billing.Quota]
 }
 
 // mcpMgr returns the lazily-initialised MCP manager.
@@ -103,10 +115,9 @@ func (s *Server) methods() handler.Map {
 		"mcp/list_tools":  handler.New(s.MCPListTools),
 		"mcp/call_tool":   handler.New(s.MCPCallTool),
 	}
-	// v0.2 scaffolding: register stub methods so the extension can discover
-	// the surface today. Stubs return ErrV02NotImplemented; the real
-	// handlers land in v0.2.1.
-	for k, v := range V02StubMethods() {
+	// v0.2 surface methods: real handlers backed by chatvars/telemetry/
+	// billing/control/finetune/team/nes/rag packages. See methods_v02.go.
+	for k, v := range s.V02Methods() {
 		m[k] = v
 	}
 	return m
@@ -229,6 +240,12 @@ func (s *Server) ChatStart(ctx context.Context, p ChatStartParams) (ChatStartRep
 	}
 	srv := jrpc2.ServerFromContext(ctx)
 	var lastFinish string
+	var completionChars int
+	promptChars := 0
+	for _, m := range p.Messages {
+		promptChars += len(m.Content)
+	}
+	t0 := time.Now()
 	err := s.Foundry.Chat(ctx, foundry.ChatRequest{
 		Deployment:  dep,
 		Messages:    p.Messages,
@@ -239,12 +256,20 @@ func (s *Server) ChatStart(ctx context.Context, p ChatStartParams) (ChatStartRep
 		if c.FinishReason != "" {
 			lastFinish = c.FinishReason
 		}
+		completionChars += len(c.Delta)
 		return srv.Notify(ctx, "chat/chunk", ChatChunkNotification{
 			StreamID:     p.StreamID,
 			Delta:        c.Delta,
 			FinishReason: c.FinishReason,
 			Err:          c.Err,
 		})
+	})
+	latencyMS := time.Since(t0).Milliseconds()
+	s.recordTelemetry(telemetry.Event{
+		Timestamp: time.Now(), Surface: "chat",
+		Deployment: dep, LatencyMS: latencyMS,
+		PromptTokens: promptChars / 4, CompletionTokens: completionChars / 4,
+		Error: errStr(err),
 	})
 	if err != nil {
 		_ = srv.Notify(ctx, "chat/chunk", ChatChunkNotification{
@@ -291,10 +316,19 @@ func (s *Server) CompleteInline(ctx context.Context, p CompleteInlineParams) (Co
 		"no markdown fences, no commentary, no quotes. Match the language and indentation."
 	user := fmt.Sprintf("LANGUAGE: %s\n\n<PREFIX>\n%s\n</PREFIX>\n\n<SUFFIX>\n%s\n</SUFFIX>\n\nCompletion:",
 		lang, p.Prefix, p.Suffix)
+	t0 := time.Now()
 	out, err := s.Foundry.Complete(ctx, dep, []foundry.ChatMessage{
 		{Role: "system", Content: sys},
 		{Role: "user", Content: user},
 	}, 256)
+	latencyMS := time.Since(t0).Milliseconds()
+	s.recordTelemetry(telemetry.Event{
+		Timestamp: time.Now(), Surface: "completion",
+		Deployment: dep, LatencyMS: latencyMS,
+		PromptTokens:     (len(sys) + len(user)) / 4,
+		CompletionTokens: len(out) / 4,
+		Error:            errStr(err),
+	})
 	if err != nil {
 		return CompleteInlineReply{}, err
 	}

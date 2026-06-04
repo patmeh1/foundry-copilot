@@ -29,6 +29,16 @@ type Config struct {
 	WorkspaceRoot        string `mapstructure:"workspace_root"`
 	RAGIndexDir          string `mapstructure:"rag_index_dir"`
 	SessionDir           string `mapstructure:"session_dir"`
+
+	// v0.2 telemetry + control plane + billing settings. All optional.
+	TelemetryPath        string   `mapstructure:"telemetry_path"`
+	TelemetryOTLPHost    string   `mapstructure:"telemetry_otlp_endpoint"`
+	TelemetryOTLPAllowed []string `mapstructure:"telemetry_otlp_allowed_hosts"`
+	SubscriptionID       string   `mapstructure:"subscription_id"`
+	ResourceGroup        string   `mapstructure:"resource_group"`
+	AccountName          string   `mapstructure:"account_name"`
+	BudgetUSD            float64  `mapstructure:"budget_usd"`
+	BudgetStatePath      string   `mapstructure:"budget_state_path"`
 }
 
 var (
@@ -41,10 +51,12 @@ func Defaults() Config {
 	home, _ := os.UserHomeDir()
 	cfgRoot := filepath.Join(home, ".foundry-copilot")
 	return Config{
-		LogLevel:      "info",
-		AgentMaxSteps: 24,
-		RAGIndexDir:   filepath.Join(cfgRoot, "index"),
-		SessionDir:    filepath.Join(cfgRoot, "sessions"),
+		LogLevel:        "info",
+		AgentMaxSteps:   24,
+		RAGIndexDir:     filepath.Join(cfgRoot, "index"),
+		SessionDir:      filepath.Join(cfgRoot, "sessions"),
+		TelemetryPath:   filepath.Join(cfgRoot, "telemetry.jsonl"),
+		BudgetStatePath: filepath.Join(cfgRoot, "budget.json"),
 	}
 }
 
@@ -57,6 +69,8 @@ func Load() (Config, error) {
 	v.SetDefault("agent_max_steps", d.AgentMaxSteps)
 	v.SetDefault("rag_index_dir", d.RAGIndexDir)
 	v.SetDefault("session_dir", d.SessionDir)
+	v.SetDefault("telemetry_path", d.TelemetryPath)
+	v.SetDefault("budget_state_path", d.BudgetStatePath)
 
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
@@ -132,6 +146,30 @@ func Update(in Config) Config {
 	}
 	if in.WorkspaceRoot != "" {
 		curr.WorkspaceRoot = in.WorkspaceRoot
+	}
+	if in.TelemetryPath != "" {
+		curr.TelemetryPath = in.TelemetryPath
+	}
+	if in.TelemetryOTLPHost != "" {
+		curr.TelemetryOTLPHost = in.TelemetryOTLPHost
+	}
+	if in.TelemetryOTLPAllowed != nil {
+		curr.TelemetryOTLPAllowed = in.TelemetryOTLPAllowed
+	}
+	if in.SubscriptionID != "" {
+		curr.SubscriptionID = in.SubscriptionID
+	}
+	if in.ResourceGroup != "" {
+		curr.ResourceGroup = in.ResourceGroup
+	}
+	if in.AccountName != "" {
+		curr.AccountName = in.AccountName
+	}
+	if in.BudgetUSD > 0 {
+		curr.BudgetUSD = in.BudgetUSD
+	}
+	if in.BudgetStatePath != "" {
+		curr.BudgetStatePath = in.BudgetStatePath
 	}
 	// Booleans always overwrite — the extension sends the user's current
 	// trust-level toggles every time it calls config/set.

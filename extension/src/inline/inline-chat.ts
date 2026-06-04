@@ -1,9 +1,9 @@
-// inline-chat.ts — Cmd+I-style inline chat surface. v0.2 scaffold inserts a
-// comment marker on the line above the cursor with the user's prompt so they
-// can see the surface is wired end-to-end; v0.2.1 hands the prompt to the
-// sidecar and renders a real inline diff.
+// inline-chat.ts — Cmd+I-style inline chat surface. Takes the user's
+// selection (or the full file when nothing is selected) and routes it
+// through chat/edit_propose, then renders a Preview/Apply confirmation
+// before mutating the buffer with a WorkspaceEdit.
 import * as vscode from 'vscode';
-import { RpcClient } from '../sidecar/rpc';
+import { Methods, RpcClient } from '../sidecar/rpc';
 
 export function registerInlineChat(
     context: vscode.ExtensionContext,
@@ -22,14 +22,44 @@ export function registerInlineChat(
                 placeHolder: 'Refactor this to use async/await…',
             });
             if (!prompt) return;
-            void rpc;
-            const line = editor.selection.active.line;
-            const indent = editor.document.lineAt(line).text.match(/^\s*/)?.[0] ?? '';
-            const comment = `${indent}// [Foundry inline chat stub] ${prompt}\n`;
-            const we = new vscode.WorkspaceEdit();
-            we.insert(editor.document.uri, new vscode.Position(line, 0), comment);
-            await vscode.workspace.applyEdit(we);
-            output.appendLine(`[inline-chat] inserted scaffold marker at line ${line + 1}`);
+            const doc = editor.document;
+            const sel = editor.selection;
+            const fullRange = new vscode.Range(
+                doc.positionAt(0),
+                doc.positionAt(doc.getText().length),
+            );
+            const targetRange = sel.isEmpty ? fullRange : sel;
+            const originalText = doc.getText(targetRange);
+            try {
+                const reply = await vscode.window.withProgress(
+                    { location: vscode.ProgressLocation.Notification, title: 'Foundry editing…' },
+                    () => Methods.chatEditPropose(rpc, {
+                        path: doc.uri.fsPath,
+                        language: doc.languageId,
+                        original_text: originalText,
+                        instruction: prompt,
+                    }),
+                );
+                const choice = await vscode.window.showInformationMessage(
+                    `Foundry proposes an edit (${reply.new_text.length} chars). ${reply.explanation || ''}`,
+                    { modal: true },
+                    'Apply', 'Show diff',
+                );
+                if (choice === 'Show diff') {
+                    const tmp = await vscode.workspace.openTextDocument({ content: reply.new_text, language: doc.languageId });
+                    await vscode.commands.executeCommand('vscode.diff', doc.uri, tmp.uri, `Foundry edit: ${doc.fileName}`);
+                    return;
+                }
+                if (choice !== 'Apply') return;
+                const we = new vscode.WorkspaceEdit();
+                we.replace(doc.uri, targetRange, reply.new_text);
+                const ok = await vscode.workspace.applyEdit(we);
+                if (ok) output.appendLine(`[inline-chat] applied edit (${reply.new_text.length} chars)`);
+                else vscode.window.showWarningMessage('Foundry inline edit was not applied.');
+            } catch (err) {
+                vscode.window.showErrorMessage(`Foundry inline chat failed: ${(err as Error).message}`);
+                output.appendLine(`[inline-chat] failed: ${(err as Error).message}`);
+            }
         }),
     );
 }
