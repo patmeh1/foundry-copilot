@@ -1,5 +1,4 @@
 package mcpx
-package mcpx
 
 import "encoding/json"
 
