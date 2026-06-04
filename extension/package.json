@@ -18,23 +18,17 @@
     "onStartupFinished"
   ],
   "contributes": {
-    "chatParticipants": [
-      {
-        "id": "foundryCopilot.chat",
-        "name": "foundry",
-        "fullName": "Foundry Copilot",
-        "description": "Chat with a Microsoft Foundry model — hard-locked, Entra-authenticated.",
-        "isSticky": true,
-        "commands": [
-          { "name": "explain", "description": "Explain the selected code or the active file." },
-          { "name": "fix", "description": "Diagnose and fix bugs in the selected code." },
-          { "name": "tests", "description": "Generate unit tests for the selected code." },
-          { "name": "doc", "description": "Add documentation comments to the selected code." },
-          { "name": "agent", "description": "Run the tool-using agent loop on your workspace." }
-        ]
-      }
-    ],
     "commands": [
+      {
+        "command": "foundryCopilot.chat.focus",
+        "title": "Foundry Copilot: Focus Chat",
+        "category": "Foundry Copilot"
+      },
+      {
+        "command": "foundryCopilot.byoChat.recheck",
+        "title": "Foundry Copilot: BYO Chat — Re-enforce Settings",
+        "category": "Foundry Copilot"
+      },
       {
         "command": "foundryCopilot.ping",
         "title": "Foundry Copilot: Ping Sidecar",
@@ -168,6 +162,24 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "foundryCopilot.chat.focus",
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i"
+      },
+      {
+        "command": "foundryCopilot.quickChat",
+        "key": "ctrl+shift+alt+i",
+        "mac": "cmd+shift+alt+i"
+      },
+      {
+        "command": "foundryCopilot.inlineChat",
+        "key": "ctrl+i",
+        "mac": "cmd+i",
+        "when": "editorTextFocus && !editorReadonly"
+      }
+    ],
     "walkthroughs": [
       {
         "id": "foundryCopilot.baa",
@@ -294,6 +306,16 @@
           "type": "number",
           "default": 0,
           "description": "Daily budget in USD. When tracked Foundry spend crosses this, a one-time alert fires (at most once per UTC day). 0 disables alerting."
+        },
+        "foundryCopilot.byoChat.hideBuiltInChat": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "**Core tenant.** Foundry Copilot provides its own chat surface (`Foundry Copilot` activity-bar view) and refuses to register a chat participant under VS Code's built-in chat panel. When this is `true` (default), the extension also turns off `chat.commandCenter.enabled` at workspace scope so the title-bar chat input is hidden. Set to `false` only if you understand that another extension's chat participant could still route prompts outside your BAA."
+        },
+        "foundryCopilot.byoChat.focusOnActivation": {
+          "type": "boolean",
+          "default": true,
+          "description": "On activation, automatically focus the Foundry Copilot chat view. Disable if you don't want the activity-bar to change focus when VS Code starts."
         }
       }
     }

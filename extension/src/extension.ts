@@ -4,18 +4,19 @@
 //      API calls).
 //   2. Sidecar spawn + RPC attach.
 //   3. LanguageModelChatProvider registration (if proposed API present).
-//   4. Foundry chat view + threads + diff surface.
+//   4. Foundry chat view + threads + diff surface (BYO chat — we never
+//      register a vscode.chat participant; see chat/byo.ts).
 //   5. Deployments / telemetry / finetune / billing tree views.
 //   6. Inline / quick / terminal / notebook chat commands.
 //   7. SCM (commit msg, PR desc), tests diagnose, instructions migration.
 //   8. NES inline-completion provider (gated).
 //   9. Team config watcher (.foundry/**).
 import * as vscode from 'vscode';
-import { registerChatParticipant } from './chat/participant';
 import { registerInlineCompletionProvider } from './completions/provider';
 import { Methods, RpcClient, SidecarConfig } from './sidecar/rpc';
 import { Sidecar, platformId } from './sidecar/process';
 import { BaaStatusController } from './baa/status';
+import { registerByoChat } from './chat/byo';
 import { registerLmProvider } from './lm/provider';
 import { registerChatView } from './views/chat/container';
 import { registerDeploymentsView } from './views/deployments';
@@ -124,13 +125,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await pushSettings();
     await reconnectMcpServers();
 
-    // Phase 3: register the @foundry chat participant.
+    // Phase 3: BYO Chat — we intentionally do NOT register a chat participant.
+    // Foundry chat lives at `foundryCopilot.chatView`; the BYO controller
+    // enforces this tenant (hides built-in chat command-centre + focuses
+    // Foundry on activation). See chat/byo.ts.
     try {
-        registerChatParticipant(context, rpc, output);
-        output.appendLine('[ext] chat participant @foundry registered');
+        registerByoChat(context, output);
+        output.appendLine('[ext] BYO chat enforced (no @foundry chat participant registered)');
     } catch (err: unknown) {
         const m = err instanceof Error ? err.message : String(err);
-        output.appendLine(`[ext] chat participant registration failed: ${m}`);
+        output.appendLine(`[ext] BYO chat enforcement failed: ${m}`);
     }
 
     // Phase 4: inline completions.

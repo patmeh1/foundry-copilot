@@ -2,6 +2,13 @@
 
 A VS Code extension that clones the GitHub Copilot experience (chat, inline completions, agent mode, slash commands, RAG, MCP) but where every model call is hard-locked to deployments in **Microsoft Foundry** (Azure AI Foundry). Architecture is a thin TypeScript extension shim that spawns a Go sidecar; the Go sidecar owns all model traffic, the agent loop, RAG, and MCP. The same Go core ships as a bonus standalone TUI coding-harness binary.
 
+## Core tenants (non-negotiable)
+
+1. **Foundry-only routing.** Every chat / completion / embedding / agent step terminates at a Foundry endpoint via Entra. Enforced by `core/internal/foundry/lock.go`.
+2. **No GitHub Copilot dependency.** BAA guard (`extension/src/baa/`) detects and disables `GitHub.copilot`, `GitHub.copilot-chat`, etc. on activation.
+3. **BYO chat surface.** The extension ships its own webview chat (`foundryCopilot.chatView`, `Cmd+Alt+I`) and **does not** register a `vscode.chat.createChatParticipant`. Doing so would route prompts through VS Code's built-in chat panel, which is owned by GitHub Copilot Chat (no BAA). The BYO controller (`extension/src/chat/byo.ts`) also disables `chat.commandCenter.enabled` at workspace scope.
+4. **All AI surfaces are Foundry surfaces.** Inline, quick chat, terminal chat, notebook chat, SCM, NES, agent — all stream through the Go sidecar.
+
 ## Why this shape
 
 - VS Code Extension Host is Node.js-only — TS is unavoidable for the IDE surface. **Go is the primary language** (sidecar + harness); TS is intentionally minimized to UI bindings and process lifecycle.

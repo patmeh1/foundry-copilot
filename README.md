@@ -36,6 +36,15 @@ Three independent layers enforce "Foundry only":
 
 See `SECURITY.md` for the full security contract.
 
+## Core tenants
+
+These are non-negotiable design rules. Any change that weakens them must update this section and `SECURITY.md` and is treated as a breaking change.
+
+1. **Foundry-only routing.** Every chat / completion / embedding / agent step terminates at a Microsoft Foundry endpoint authenticated via Microsoft Entra ID. Enforced by the three Hard-Lock layers above.
+2. **No GitHub Copilot dependency.** The extension does **not** require, recommend, or proxy through `GitHub.copilot` or `GitHub.copilot-chat`. GitHub Copilot ships without a BAA; running it alongside Foundry Copilot defeats the entire purpose. The BAA guard (`extension/src/baa/`) detects, warns, and (by default) disables these extensions on activation.
+3. **BYO chat surface — we never piggyback on VS Code's built-in chat panel.** Foundry Copilot provides its own chat UI as a webview in the `Foundry Copilot` activity-bar container (`foundryCopilot.chatView`, `Cmd+Alt+I` / `Ctrl+Alt+I`). The extension intentionally does **not** register a `vscode.chat.createChatParticipant` because doing so would route prompts through the built-in chat panel, which is owned by GitHub Copilot Chat. The BYO controller (`extension/src/chat/byo.ts`) also disables `chat.commandCenter.enabled` at workspace scope so the title-bar chat input is hidden. Opt out per-workspace via `foundryCopilot.byoChat.hideBuiltInChat = false`.
+4. **All AI surfaces are Foundry surfaces.** Inline completion (`Cmd+I`), quick chat, terminal chat, notebook chat, SCM commit-message + PR-description, NES, "diagnose test failure", and the agent loop all stream through the same Go sidecar — never through a third-party LM provider.
+
 ## Repository layout
 
 ```
