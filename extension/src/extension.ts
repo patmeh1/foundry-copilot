@@ -3,6 +3,7 @@
 // commands. Phase 3 will register the chat participant here.
 import * as vscode from 'vscode';
 import { registerChatParticipant } from './chat/participant';
+import { registerInlineCompletionProvider } from './completions/provider';
 import { Methods, RpcClient, SidecarConfig } from './sidecar/rpc';
 import { Sidecar, platformId } from './sidecar/process';
 
@@ -73,6 +74,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     } catch (err: unknown) {
         const m = err instanceof Error ? err.message : String(err);
         output.appendLine(`[ext] chat participant registration failed: ${m}`);
+    }
+
+    // Phase 4: inline completions.
+    try {
+        registerInlineCompletionProvider(context, rpc, output);
+        output.appendLine('[ext] inline completion provider registered');
+    } catch (err: unknown) {
+        const m = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[ext] inline completion registration failed: ${m}`);
     }
 
     context.subscriptions.push(

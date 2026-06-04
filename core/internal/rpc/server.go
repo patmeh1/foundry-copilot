@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 
 	"github.com/creachadair/jrpc2"
 	"github.com/creachadair/jrpc2/channel"
@@ -215,9 +216,53 @@ type CompleteInlineReply struct {
 	Text string `json:"text"`
 }
 
-// CompleteInline returns a single FIM completion. Phase 4 will wire to Foundry.
+// CompleteInline returns a single FIM-style completion. Uses chat with a
+// tightly-scoped system prompt so it works with any modern chat model
+// (no FIM-specific deployment required).
 func (s *Server) CompleteInline(ctx context.Context, p CompleteInlineParams) (CompleteInlineReply, error) {
-	return CompleteInlineReply{Text: ""}, nil
+	if s.Foundry == nil {
+		return CompleteInlineReply{}, fmt.Errorf("foundry client not configured")
+	}
+	cfg := config.Get()
+	dep := cfg.CompletionDeployment
+	if dep == "" {
+		dep = cfg.ChatDeployment
+	}
+	if dep == "" {
+		return CompleteInlineReply{}, fmt.Errorf("no completion or chat deployment configured")
+	}
+	lang := p.Language
+	if lang == "" {
+		lang = "plaintext"
+	}
+	sys := "You are a code completion engine. Given a code prefix and suffix, " +
+		"output ONLY the code that goes BETWEEN them. Output the completion text only, " +
+		"no markdown fences, no commentary, no quotes. Match the language and indentation."
+	user := fmt.Sprintf("LANGUAGE: %s\n\n<PREFIX>\n%s\n</PREFIX>\n\n<SUFFIX>\n%s\n</SUFFIX>\n\nCompletion:",
+		lang, p.Prefix, p.Suffix)
+	out, err := s.Foundry.Complete(ctx, dep, []foundry.ChatMessage{
+		{Role: "system", Content: sys},
+		{Role: "user", Content: user},
+	}, 256)
+	if err != nil {
+		return CompleteInlineReply{}, err
+	}
+	return CompleteInlineReply{Text: sanitizeCompletion(out)}, nil
+}
+
+// sanitizeCompletion strips common artifacts (markdown fences, surrounding
+// whitespace) the model sometimes emits even when asked not to.
+func sanitizeCompletion(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "```") {
+		if nl := strings.IndexByte(s, '\n'); nl > 0 {
+			s = s[nl+1:]
+		}
+		if j := strings.LastIndex(s, "```"); j >= 0 {
+			s = s[:j]
+		}
+	}
+	return strings.TrimSpace(s)
 }
 
 type AgentRunParams struct {

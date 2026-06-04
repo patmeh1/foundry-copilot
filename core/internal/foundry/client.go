@@ -158,6 +158,32 @@ func (c *Client) Embed(ctx context.Context, deployment string, inputs []string) 
 	return out, nil
 }
 
+// Complete runs a single non-streaming chat completion and returns the
+// assistant's text. Used by Phase 4 inline completions; the model is
+// instructed to return only the missing middle between prefix and suffix.
+func (c *Client) Complete(ctx context.Context, deployment string, messages []ChatMessage, maxTokens int32) (string, error) {
+	if c.inner == nil {
+		return "", fmt.Errorf("foundry-copilot: client not initialised")
+	}
+	if deployment == "" {
+		return "", fmt.Errorf("foundry-copilot: empty deployment name")
+	}
+	params := openai.ChatCompletionNewParams{
+		Model:               shared.ChatModel(deployment),
+		Messages:            toOpenAIMessages(messages),
+		Temperature:         param.NewOpt(0.1),
+		MaxCompletionTokens: param.NewOpt(int64(maxTokens)),
+	}
+	resp, err := c.inner.Chat.Completions.New(ctx, params)
+	if err != nil {
+		return "", err
+	}
+	if len(resp.Choices) == 0 {
+		return "", nil
+	}
+	return resp.Choices[0].Message.Content, nil
+}
+
 // ─── Entra bearer middleware ───────────────────────────────────────────────
 //
 // openai-go's middleware sees an http.Request just before send. We use it
