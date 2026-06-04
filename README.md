@@ -65,7 +65,7 @@ These are non-negotiable design rules. Any change that weakens them must update 
 │   ├── src/
 │   │   ├── extension.ts
 │   │   ├── sidecar/          # Process manager + RPC client
-│   │   ├── chat/             # Chat participant + webview
+│   │   ├── chat/             # BYO chat view (webview) + BAA enforcement
 │   │   └── completions/      # Inline completion provider
 │   ├── package.json          # Manifest + settings schema (with lock regex)
 │   └── tsconfig.json
@@ -139,12 +139,30 @@ For local dev, run `az login` once.
 
 In VS Code settings:
 
-| Setting | Description |
-|---------|-------------|
-| `foundryCopilot.endpoint` | Foundry endpoint URL. **Must match** the allow-list regex. |
-| `foundryCopilot.chatModelDeployment` | Deployment name for chat. |
-| `foundryCopilot.completionModelDeployment` | Deployment name for inline FIM completions. |
-| `foundryCopilot.embeddingDeployment` | Embedding deployment for RAG. |
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `foundryCopilot.endpoint` | `""` | Foundry endpoint URL. **Must match** the allow-list regex (`*.services.ai.azure.com`, `*.cognitiveservices.azure.com`, `*.openai.azure.com`, `*.inference.ml.azure.com`). |
+| `foundryCopilot.chatDeployment` | `""` | Deployment name for chat (e.g. `gpt-4o`, `gpt-5.4`). Required for the chat view and every chat-style surface. |
+| `foundryCopilot.completionDeployment` | `""` | Deployment name for inline FIM completions. Optional. |
+| `foundryCopilot.embeddingDeployment` | `""` | Embedding deployment for workspace RAG. Optional. |
+| `foundryCopilot.byoChat.hideBuiltInChat` | `true` | Hide VS Code's built-in chat command-centre input on activation (core tenant). |
+| `foundryCopilot.byoChat.focusOnActivation` | `true` | Focus the Foundry chat view on activation. |
+| `foundryCopilot.baa.enforcement` | `"auto"` | `auto` (silently disable conflicting GitHub Copilot extensions), `prompt`, or `off`. |
+| `foundryCopilot.baa.target` | `"workspace"` | Scope of the BAA disable: `workspace` or `global`. |
+| `foundryCopilot.baa.conflictingExtensions` | `[]` | Extra extension IDs to treat as conflicts. |
+| `foundryCopilot.nes.enabled` | `false` | Enable Next Edit Suggestions (multi-line inline edits). |
+| `foundryCopilot.lmProvider.enabled` | `true` | Expose Foundry deployments to VS Code's Select Model picker (proposed API). |
+| `foundryCopilot.telemetry.localStore` | `true` | Append every Foundry call to a local JSONL store. |
+| `foundryCopilot.telemetry.otlpEndpoint` | `""` | Optional OTLP HTTP collector. Only sends if host is in the allow-list. |
+| `foundryCopilot.telemetry.otlpAllowedHosts` | `[]` | Dot-anchored host suffix allow-list for OTLP export. |
+| `foundryCopilot.billing.dailyBudgetUsd` | `0` | Fires a one-time alert when tracked spend crosses this budget for the UTC day. `0` disables. |
+| `foundryCopilot.agent.maxSteps` | `12` | Maximum agent-loop iterations. |
+| `foundryCopilot.agent.allowWrite` | `false` | Let the agent loop call `fs_write`. |
+| `foundryCopilot.agent.allowShell` | `false` | Let the agent loop call `shell` (30 s / 16 KiB cap). |
+| `foundryCopilot.mcp.servers` | `[]` | List of stdio MCP servers to launch. |
+| `foundryCopilot.logLevel` | `"info"` | `debug`, `info`, `warn`, `error`. |
+
+For the full user-facing tour see [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
 
 ## License
 
