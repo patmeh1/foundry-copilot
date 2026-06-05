@@ -37,3 +37,6 @@ core/coverage.txt
 
 # Smoke test artifacts
 scripts/smoke-output.json
+
+# Screenshot capture scratch (do not commit)
+tmp/

@@ -6,7 +6,9 @@ model providers, no API keys, no escape hatches.
 
 This guide walks you from zero to a working install. For the security
 contract behind the hard lock, see [SECURITY.md](../SECURITY.md). For
-the build plan, see [plan.md](../plan.md).
+the build plan, see [plan.md](../plan.md). Prefer screenshots? See the
+[Visual Tour](VISUAL_TOUR.md) for a picture-first walk through every
+surface.
 
 ---
 
