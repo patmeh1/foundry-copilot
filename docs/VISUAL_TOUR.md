@@ -62,7 +62,10 @@ Click any step's button to jump to the corresponding command
 
 ## 3. The chat view
 
-![Empty Foundry chat thread with input and send](images/03-chat-empty.png)
+> See [CHAT_GUIDE.md](CHAT_GUIDE.md) for the full hands-on chat
+> walkthrough (endpoint setup, threading, troubleshooting matrix).
+
+![Foundry chat view with a streaming assistant reply under a New chat thread](images/chat-01-first-response.png)
 
 Anatomy:
 
@@ -75,13 +78,16 @@ Anatomy:
   newline.
 - **Send button** (bottom-right): same as Enter.
 
-To send a prompt, click into the input, type, and press Enter.
+Multi-turn works the way you'd expect: the sidecar replays the full
+thread history on each turn, so the assistant has context for the
+follow-up. Below, the user pastes the buggy line from `app.py` and the
+model returns an explanation plus a fenced code-block fix:
+
+![Multi-turn chat with a Python fix returned](images/chat-02-multi-turn.png)
 
 ---
 
 ## 4. Quick chat — palette-style one-shot
-
-![Quick chat input box at the top of the window with a typed question](images/13-quick-chat-typed.png)
 
 **Command palette → `Foundry Copilot: Quick Chat`** (or bind a key).
 
@@ -90,7 +96,7 @@ press Enter, and the streamed response is appended to a fresh
 `Foundry Quick Chat` output channel that opens at the bottom of the
 window.
 
-![Quick chat output channel with the streaming response and error diagnostics](images/14-quick-chat-response.png)
+![Quick chat output channel showing a streamed answer about Flask with [done: stop]](images/chat-05-quick-chat.png)
 
 The output channel is honest about what's happening underneath:
 
@@ -108,32 +114,22 @@ which writes the full text to the clipboard.
 
 ## 5. Inline chat — refactor inside the editor
 
-**Command palette → `Foundry Copilot: Inline Chat`** (or bind `⌘I` /
-`Ctrl+I`).
+**Command palette → `Foundry Copilot: Inline Chat`** (or bind `⌘⌥I` /
+`Ctrl+Alt+I`).
 
 The flow has three steps. First, an input box prompts for an
-instruction:
+instruction (selection is implicit — if you have a selection, the edit
+targets it; otherwise it targets the whole file):
 
-![Inline chat input prompt over the editor](images/09-inline-chat-input.png)
-
-Type what you want done. Selection is implicit: if you have a selection,
-the edit targets the selection; otherwise it targets the whole file.
-
-![Inline chat with a real instruction typed in](images/10-inline-chat-typed.png)
+![Inline chat input over app.py with a refactor prompt](images/chat-06-inline-empty.png)
 
 Press Enter. The extension calls `chat/edit_propose` on the sidecar and
-shows a modal with the proposed edit length + the model's explanation.
+shows a modal with the proposed edit length + the model's explanation:
 
-![Inline chat showing the BAA banner and an error toast when the sidecar isn't fully configured](images/11-inline-chat-proposal.png)
+![Inline chat proposal: 'Foundry proposes an edit (721 chars). Updated the order total calculation to cast each item's qty to int …'](images/chat-07-inline-result.png)
 
-The screenshot above is taken in a freshly-launched workspace where the
-sidecar's `chat/edit_propose` handler is bootstrapping — it surfaces a
-clear error toast instead of silently failing, and you can see the
-**Foundry Copilot is enforcing the BAA boundary** banner in the bottom
-left confirming the guard is active.
-
-Click **Apply** to write the edit, or **Show diff** to preview in a
-side-by-side diff view first.
+Click **Apply** to write the edit (undoable via Cmd/Ctrl-Z), **Show
+diff** to preview side-by-side first, or **Cancel** to drop it.
 
 ---
 

@@ -165,6 +165,11 @@ for one of:
 
 ## 6. Use the Foundry chat view
 
+> **A dedicated, hands-on chat walkthrough — with screenshots of every
+> surface (chat view, Quick Chat, Inline Chat) and a troubleshooting
+> matrix — lives in [CHAT_GUIDE.md](CHAT_GUIDE.md). Start there if you
+> are configuring chat for the first time.**
+
 Forge Copilot ships its own chat view in a dedicated activity-bar
 container (shield icon 🛡️ labelled **Foundry Copilot**). This is the
 primary way to chat with your Foundry model.
