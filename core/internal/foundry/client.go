@@ -1,11 +1,14 @@
 package foundry
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +19,12 @@ import (
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/shared"
 )
+
+// AzureAPIVersion is the api-version query parameter we append to every
+// rewritten Azure OpenAI request. 2024-10-21 is the latest GA release at
+// the time of writing and supports the chat/completions, embeddings and
+// completions surfaces we use.
+const AzureAPIVersion = "2024-10-21"
 
 // Client is the thin Foundry wrapper used by the rest of the sidecar.
 // All outbound traffic goes through a LockedTransport (see lock.go) AND
@@ -39,10 +48,15 @@ func NewClient(endpoint string, cred azcore.TokenCredential) (*Client, error) {
 	}
 	httpClient := LockedHTTPClient()
 	bearer := newBearerMiddleware(cred)
+	azureRoute := newAzureRouteMiddleware(AzureAPIVersion)
 
 	inner := openai.NewClient(
 		option.WithBaseURL(endpoint),
 		option.WithHTTPClient(httpClient),
+		// Azure routing MUST run before the bearer middleware so the URL
+		// is the final Azure-style path by the time the request is signed
+		// and dispatched through LockedTransport.
+		option.WithMiddleware(azureRoute),
 		option.WithMiddleware(bearer.middleware),
 		// Prevent the SDK from sending an OpenAI API key (we are Entra-only).
 		option.WithAPIKey(""),
@@ -286,4 +300,114 @@ func (b *bearerMiddleware) middleware(req *http.Request, next func(*http.Request
 	}
 	req.Header.Set("Authorization", "Bearer "+tok)
 	return next(req)
+}
+
+// ─── Azure URL routing middleware ──────────────────────────────────────────
+//
+// openai-go was designed for api.openai.com and constructs URLs like
+// "{baseURL}/chat/completions". Azure OpenAI / Microsoft Foundry expects
+// "{baseURL}/openai/deployments/{deployment}/chat/completions?api-version=..."
+// with the deployment name in the URL path and an api-version query param.
+//
+// This middleware bridges that mismatch: it reads the JSON body, lifts the
+// "model" field (which the sidecar populates with the deployment name),
+// rewrites the request URL to Azure's pattern, and adds the api-version
+// query parameter. The original body bytes are preserved verbatim — Azure
+// also accepts (and ignores) the "model" field in the body.
+//
+// Paths handled: /chat/completions, /completions, /embeddings. Anything
+// else is passed through unchanged so the lock + bearer still get a chance
+// to refuse.
+
+func newAzureRouteMiddleware(apiVersion string) func(*http.Request, func(*http.Request) (*http.Response, error)) (*http.Response, error) {
+	return func(req *http.Request, next func(*http.Request) (*http.Response, error)) (*http.Response, error) {
+		if req == nil || req.URL == nil {
+			return next(req)
+		}
+		path := req.URL.Path
+		if !isOpenAIRoutablePath(path) {
+			return next(req)
+		}
+		body, err := readAndRestoreBody(req)
+		if err != nil {
+			return nil, fmt.Errorf("foundry-copilot: azure-route: read body: %w", err)
+		}
+		deployment := extractModelField(body)
+		if deployment == "" {
+			// No model in body — can't route to a deployment. Surface a
+			// clear error rather than letting Azure respond with a generic
+			// 404 that wastes a token on each chat turn.
+			return nil, fmt.Errorf("foundry-copilot: azure-route: request body missing \"model\" field for path %q", path)
+		}
+		newPath := azureRoutePath(path, deployment)
+		req.URL.Path = newPath
+		q := req.URL.Query()
+		if q.Get("api-version") == "" {
+			q.Set("api-version", apiVersion)
+			req.URL.RawQuery = q.Encode()
+		}
+		return next(req)
+	}
+}
+
+// isOpenAIRoutablePath reports whether the request targets a known OpenAI
+// surface that Azure exposes under /openai/deployments/{name}/...
+func isOpenAIRoutablePath(p string) bool {
+	switch {
+	case strings.HasSuffix(p, "/chat/completions"):
+		return true
+	case strings.HasSuffix(p, "/completions") && !strings.HasSuffix(p, "/chat/completions"):
+		return true
+	case strings.HasSuffix(p, "/embeddings"):
+		return true
+	}
+	return false
+}
+
+// azureRoutePath converts an OpenAI-style path to the Azure-style path with
+// the deployment name embedded after "/openai/deployments/".
+func azureRoutePath(p, deployment string) string {
+	switch {
+	case strings.HasSuffix(p, "/chat/completions"):
+		return "/openai/deployments/" + deployment + "/chat/completions"
+	case strings.HasSuffix(p, "/embeddings"):
+		return "/openai/deployments/" + deployment + "/embeddings"
+	case strings.HasSuffix(p, "/completions"):
+		return "/openai/deployments/" + deployment + "/completions"
+	}
+	return p
+}
+
+// readAndRestoreBody drains req.Body, restores it (and GetBody) so the
+// downstream RoundTrip can re-read it, and returns the raw bytes.
+func readAndRestoreBody(req *http.Request) ([]byte, error) {
+	if req.Body == nil {
+		return nil, nil
+	}
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	_ = req.Body.Close()
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
+	req.ContentLength = int64(len(body))
+	return body, nil
+}
+
+// extractModelField returns the value of the top-level "model" field in a
+// JSON body, or "" if absent / unparseable.
+func extractModelField(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	var probe struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return ""
+	}
+	return probe.Model
 }
