@@ -139,6 +139,9 @@ func (s *Server) Version_(ctx context.Context) (string, error) {
 }
 
 // ConfigSet receives a partial config from the extension and merges it in.
+// When the endpoint actually changes (or is set for the first time), the
+// underlying Foundry client is rebuilt so subsequent chat/stream and
+// chat/start calls don't fail with "foundry client not configured".
 func (s *Server) ConfigSet(ctx context.Context, in config.Config) (config.Config, error) {
 	// Endpoint changes must re-validate against the hard lock — even though
 	// the package settings UI also validates, we trust nothing.
@@ -147,8 +150,27 @@ func (s *Server) ConfigSet(ctx context.Context, in config.Config) (config.Config
 			return config.Config{}, err
 		}
 	}
+	prev := config.Get().Endpoint
 	out := config.Update(in)
 	s.Log.Info("config updated", "endpoint", out.Endpoint)
+
+	// If the endpoint just changed (or was empty and is now set), rebuild
+	// the Foundry client. The credential is re-built too so we pick up any
+	// fresh Entra session the user has logged into between calls.
+	if out.Endpoint != "" && out.Endpoint != prev {
+		cred, credErr := foundry.NewCredential()
+		if credErr != nil {
+			s.Log.Warn("config/set: credential build failed", "err", credErr)
+			return out, nil
+		}
+		client, clientErr := foundry.NewClient(out.Endpoint, cred)
+		if clientErr != nil {
+			s.Log.Warn("config/set: foundry client build failed", "err", clientErr)
+			return out, nil
+		}
+		s.Foundry = client
+		s.Log.Info("foundry client rebuilt", "endpoint", out.Endpoint)
+	}
 	return out, nil
 }
 
